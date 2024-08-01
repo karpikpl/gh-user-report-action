@@ -1,0 +1,27 @@
+name: 'Get report for all repositories in the org'
+description: 'Get a CSV report for all repositories in the organization'
+author: 'Piotr Karpala'
+
+# Add your action's branding here. This will appear on the GitHub Marketplace.
+branding:
+  icon: 'heart'
+  color: 'red'
+
+# Define your inputs here.
+inputs:
+  github-pat:
+    description:
+      'Application token with permissions to read organization repositories'
+    required: true
+  github-org:
+    description: 'The name of the organization check copilot seats for'
+    required: true
+
+# Define your outputs here.
+outputs:
+  file:
+    description: 'CSV file with the report'
+
+runs:
+  using: node20
+  main: dist/index.js
