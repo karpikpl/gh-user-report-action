@@ -7,38 +7,38 @@ const { hold_until_rate_limit_success } = require('./rateLimit')
 //   These endpoints only support authentication using a personal access token (classic). For more information, see "Managing your personal access tokens."
 
 class UserManager {
-    constructor(token) {
-        this.token = token
+  constructor(token) {
+    this.token = token
+  }
+
+  async init() {
+    if (this.graphql) {
+      return
     }
 
-    async init() {
-        if (this.graphql) {
-            return
-        }
+    // ignore import/no-unresolved for dynamic imports
+    // eslint-disable-next-line import/no-unresolved
+    const Octokit = await import('@octokit/core')
+    // eslint-disable-next-line import/no-unresolved
+    const paginateGraphQL = await import('@octokit/plugin-paginate-graphql')
+    // eslint-disable-next-line import/no-unresolved
+    const paginateRest = await import('@octokit/plugin-paginate-rest')
+    const NewOctokit = Octokit.Octokit.plugin(
+      paginateGraphQL.paginateGraphQL,
+      paginateRest.paginateRest
+    )
 
-        // ignore import/no-unresolved for dynamic imports
-        // eslint-disable-next-line import/no-unresolved
-        const Octokit = await import('@octokit/core')
-        // eslint-disable-next-line import/no-unresolved
-        const paginateGraphQL = await import('@octokit/plugin-paginate-graphql')
-        // eslint-disable-next-line import/no-unresolved
-        const paginateRest = await import('@octokit/plugin-paginate-rest')
-        const NewOctokit = Octokit.Octokit.plugin(
-            paginateGraphQL.paginateGraphQL,
-            paginateRest.paginateRest
-        )
+    this.octokit = new NewOctokit({ auth: this.token })
+    this.graphql = this.octokit.graphql
 
-        this.octokit = new NewOctokit({ auth: this.token })
-        this.graphql = this.octokit.graphql
+    // no point in starting if we can't get the rate limit
+    await hold_until_rate_limit_success(100, this.token)
+  }
 
-        // no point in starting if we can't get the rate limit
-        await hold_until_rate_limit_success(100, this.token)
-    }
+  async getAllOrganizationsInEnterprise(ent) {
+    await this.init()
 
-    async getAllOrganizationsInEnterprise(ent) {
-        await this.init()
-
-        const query = `
+    const query = `
         query($ent: String!, $cursor: String) {
         enterprise(slug: $ent) {
             organizations(first: 100, after: $cursor) {
@@ -57,83 +57,83 @@ class UserManager {
         }
             `
 
-        try {
-            const all = []
-            const iterator = await this.graphql.paginate.iterator(query, { ent })
-            let page_check_done = false
+    try {
+      const all = []
+      const iterator = await this.graphql.paginate.iterator(query, { ent })
+      let page_check_done = false
 
-            for await (const result of iterator) {
-                const orgs = result.enterprise.organizations.nodes
-                all.push(...orgs)
+      for await (const result of iterator) {
+        const orgs = result.enterprise.organizations.nodes
+        all.push(...orgs)
 
-                // perform a rate limit check if there are more pages
-                page_check_done = !result.enterprise.organizations.pageInfo.hasNextPage
+        // perform a rate limit check if there are more pages
+        page_check_done = !result.enterprise.organizations.pageInfo.hasNextPage
 
-                if (!page_check_done) {
-                    const totalCount = result.enterprise.organizations.totalCount
-                    core.info(`${totalCount} total orgs. Performing rate limit check...`)
+        if (!page_check_done) {
+          const totalCount = result.enterprise.organizations.totalCount
+          core.info(`${totalCount} total orgs. Performing rate limit check...`)
 
-                    const totalCalls = Math.ceil(totalCount / 100)
-                    await hold_until_rate_limit_success(totalCalls + 10, this.token)
-                    page_check_done = true
-                }
-            }
-
-            return all
-        } catch (error) {
-            core.error('Error fetching organizations:', error)
-            throw error
+          const totalCalls = Math.ceil(totalCount / 100)
+          await hold_until_rate_limit_success(totalCalls + 10, this.token)
+          page_check_done = true
         }
+      }
+
+      return all
+    } catch (error) {
+      core.error('Error fetching organizations:', error)
+      throw error
     }
+  }
 
-    async getConsumedLicenses(ent) {
-        await this.init()
+  async getConsumedLicenses(ent) {
+    await this.init()
 
-        try {
-            const page_size = 5
-            const users = []
-            let page_check_done = false
+    try {
+      const page_size = 5
+      const users = []
+      let page_check_done = false
 
-            for await (const response of this.octokit.paginate.iterator(
-                `GET /enterprises/${ent}/consumed-licenses`,
-                {
-                    per_page: page_size
-                }
-            )) {
-                users.push(...response.data.users)
-
-                // do not perform a rate limit check if we are done
-                page_check_done = response.data.total_seats_consumed <= page_size
-
-                // perform a rate limit check after the first page
-                if (!page_check_done) {
-                    core.info(
-                        `${response.data.total_seats_consumed} total users. Performing rate limit check...`
-                    )
-
-                    const totalCalls = Math.ceil(
-                        response.data.total_seats_consumed / page_size
-                    )
-                    await hold_until_rate_limit_success(
-                        totalCalls + 10,
-                        this.token,
-                        response.headers
-                    )
-                    page_check_done = true
-                }
-            }
-
-            return users
-        } catch (error) {
-            console.error('Error fetching users consuming licenses:', error)
-            throw error
+      for await (const response of this.octokit.paginate.iterator(
+        `GET /enterprises/${ent}/consumed-licenses`,
+        {
+          per_page: page_size
         }
+      )) {
+        users.push(...response.data.users)
+
+        // do not perform a rate limit check if we are done
+        page_check_done = response.data.total_seats_consumed <= page_size
+
+        // perform a rate limit check after the first page
+        if (!page_check_done) {
+          core.info(
+            `${response.data.total_seats_consumed} total users. Performing rate limit check...`
+          )
+
+          const totalCalls = Math.ceil(
+            response.data.total_seats_consumed / page_size
+          )
+          await hold_until_rate_limit_success(
+            totalCalls + 10,
+            this.token,
+            response.headers
+          )
+          page_check_done = true
+        }
+      }
+
+      return users
+    } catch (error) {
+      console.error('Error fetching users consuming licenses:', error)
+      throw error
     }
+  }
 
-    async getAllUserIdsInOrganization(org) {
-        await this.init()
+  async getAllUserIdsInOrganization(org) {
+    await this.init()
 
-        const query = `
+    const query = `
         query($org: String!, $cursor: String) {
         organization(login: $org) {
             membersWithRole(first: 100, after: $cursor) {
@@ -149,47 +149,47 @@ class UserManager {
             }
         }`
 
-        try {
-            const all = []
-            const iterator = await this.graphql.paginate.iterator(query, { org })
+    try {
+      const all = []
+      const iterator = await this.graphql.paginate.iterator(query, { org })
 
-            let page_check_done = false
+      let page_check_done = false
 
-            for await (const result of iterator) {
-                const logins = result.organization.membersWithRole.nodes.map(
-                    node => node.login
-                )
-                all.push(...logins)
+      for await (const result of iterator) {
+        const logins = result.organization.membersWithRole.nodes.map(
+          node => node.login
+        )
+        all.push(...logins)
 
-                // perform a rate limit check if there are more pages
-                page_check_done =
-                    !result.organization.membersWithRole.pageInfo.hasNextPage
+        // perform a rate limit check if there are more pages
+        page_check_done =
+          !result.organization.membersWithRole.pageInfo.hasNextPage
 
-                if (!page_check_done) {
-                    const totalCount = result.organization.membersWithRole.totalCount
-                    core.info(`${totalCount} total users. Performing rate limit check...`)
+        if (!page_check_done) {
+          const totalCount = result.organization.membersWithRole.totalCount
+          core.info(`${totalCount} total users. Performing rate limit check...`)
 
-                    const totalCalls = Math.ceil(totalCount / 100)
-                    await hold_until_rate_limit_success(totalCalls + 10, this.token)
-                    page_check_done = true
-                }
-            }
-
-            return all
-        } catch (error) {
-            core.error('Error fetching organizations:', error)
-            throw error
+          const totalCalls = Math.ceil(totalCount / 100)
+          await hold_until_rate_limit_success(totalCalls + 10, this.token)
+          page_check_done = true
         }
+      }
+
+      return all
+    } catch (error) {
+      core.error('Error fetching organizations:', error)
+      throw error
     }
+  }
 
-    async getOrgsAndTeamsForUser(username) {
-        await this.init()
+  async getOrgsAndTeamsForUser(username) {
+    await this.init()
 
-        // TODO - this returns all organizations, not just the ones in the enterprise
-        // contributionsCollection should work for last activity? https://docs.github.com/en/graphql/reference/objects#contributionscollection
+    // TODO - this returns all organizations, not just the ones in the enterprise
+    // contributionsCollection should work for last activity? https://docs.github.com/en/graphql/reference/objects#contributionscollection
 
-        // TODO check if createdAt is needed - original script has it
-        const query = `
+    // TODO check if createdAt is needed - original script has it
+    const query = `
   query($username: String!, $cursor: String) {
     user(login: $username) {
       contributionsCollection  {
@@ -227,63 +227,63 @@ class UserManager {
     }
   }`
 
-        try {
-            const all = []
-            const iterator = await this.graphql.paginate.iterator(query, {
-                username
-            })
+    try {
+      const all = []
+      const iterator = await this.graphql.paginate.iterator(query, {
+        username
+      })
 
-            for await (const result of iterator) {
-                const hasMoreOrgs = result.user.organizations.pageInfo.hasNextPage
+      for await (const result of iterator) {
+        const hasMoreOrgs = result.user.organizations.pageInfo.hasNextPage
 
-                if (hasMoreOrgs) {
-                    core.debug(
-                        `User ${username} is a member of more than 100 organizations. Results will be paged.`
-                    )
+        if (hasMoreOrgs) {
+          core.debug(
+            `User ${username} is a member of more than 100 organizations. Results will be paged.`
+          )
 
-                    // todo - perform a rate limit check if there are more pages ?
-                }
-
-                // check if there are more teams to fetch
-                for (const org of result.user.organizations.edges) {
-                    const orgResult = {
-                        org: {
-                            login: org.node.login,
-                            name: org.node.name,
-                            description: org.node.description
-                        },
-                        teams: org.node.teams.edges.map(edge => edge.node)
-                    }
-
-                    const hasMoreTeams = org.node.teams.pageInfo.hasNextPage
-                    if (hasMoreTeams) {
-                        core.warning(
-                            `User ${username} is a member of more than 2 teams in organization ${org.node.login}. This script only supports 2 teams.`
-                        )
-
-                        const teams = await this.getMoreTeamsForUser(
-                            username,
-                            org.node.login,
-                            org.node.teams.pageInfo.endCursor
-                        )
-                        orgResult.teams.push(...teams)
-                    }
-
-                    all.push(orgResult)
-                }
-            }
-
-            return all
-        } catch (error) {
-            core.error('Error fetching organizations:', error)
-            throw error
+          // todo - perform a rate limit check if there are more pages ?
         }
+
+        // check if there are more teams to fetch
+        for (const org of result.user.organizations.edges) {
+          const orgResult = {
+            org: {
+              login: org.node.login,
+              name: org.node.name,
+              description: org.node.description
+            },
+            teams: org.node.teams.edges.map(edge => edge.node)
+          }
+
+          const hasMoreTeams = org.node.teams.pageInfo.hasNextPage
+          if (hasMoreTeams) {
+            core.warning(
+              `User ${username} is a member of more than 2 teams in organization ${org.node.login}. This script only supports 2 teams.`
+            )
+
+            const teams = await this.getMoreTeamsForUser(
+              username,
+              org.node.login,
+              org.node.teams.pageInfo.endCursor
+            )
+            orgResult.teams.push(...teams)
+          }
+
+          all.push(orgResult)
+        }
+      }
+
+      return all
+    } catch (error) {
+      core.error('Error fetching organizations:', error)
+      throw error
     }
+  }
 
-    async getMoreTeamsForUser(username, org, cursor) {
-        await this.init()
+  async getMoreTeamsForUser(username, org, cursor) {
+    await this.init()
 
-        const query = `
+    const query = `
     query($username: String!, $org: String!, $cursor: String) {
         organization(login: $org) {
             teams(first: 100, after: $cursor, userLogins: [$username]) {
@@ -301,53 +301,52 @@ class UserManager {
         }
     }`
 
-        try {
-            const all = []
-            const iterator = await this.graphql.paginate.iterator(query, {
-                username,
-                org,
-                cursor
-            })
+    try {
+      const all = []
+      const iterator = await this.graphql.paginate.iterator(query, {
+        username,
+        org,
+        cursor
+      })
 
-            let page_check_done = false
+      let page_check_done = false
 
-            for await (const result of iterator) {
-                const teams = result.organization.teams.nodes
-                all.push(...teams)
+      for await (const result of iterator) {
+        const teams = result.organization.teams.nodes
+        all.push(...teams)
 
-                // perform a rate limit check if there are more pages
-                page_check_done = !result.organization.teams.pageInfo.hasNextPage
+        // perform a rate limit check if there are more pages
+        page_check_done = !result.organization.teams.pageInfo.hasNextPage
 
-                if (!page_check_done) {
-                    const totalCount = result.organization.teams.totalCount
-                    core.info(
-                        `${totalCount} total teams for ${username} in ${org} org. Performing rate limit check...`
-                    )
+        if (!page_check_done) {
+          const totalCount = result.organization.teams.totalCount
+          core.info(
+            `${totalCount} total teams for ${username} in ${org} org. Performing rate limit check...`
+          )
 
-                    const totalCalls = Math.ceil(totalCount / 100)
-                    await hold_until_rate_limit_success(totalCalls + 10, this.token)
-                    page_check_done = true
-                }
-            }
-
-            return all
-        } catch (error) {
-            core.error(`Error fetching teams for ${username} in ${org} org:`, error)
-            throw error
+          const totalCalls = Math.ceil(totalCount / 100)
+          await hold_until_rate_limit_success(totalCalls + 10, this.token)
+          page_check_done = true
         }
-    }
+      }
 
-    async getLastActivityForUser(username) {
-        // TODO call "https://api.github.com/users/$($_.github_com_login)/events" or use contributionsCollection.endedAt ?
-        "https://api.github.com/enterprises/$enterprise/audit-log?phrase=created:<=$today+actor:$userName&include=all"
+      return all
+    } catch (error) {
+      core.error(`Error fetching teams for ${username} in ${org} org:`, error)
+      throw error
     }
+  }
 
-    async getAuditForUser(username, ent) {
-        // TODO call "https://api.github.com/enterprises/$enterprise/audit-log?phrase=created:<=$today+actor:$userName&include=all"
-        // TODO - add per_page=1 if we only need the latest event ?
+  async getLastActivityForUser(username) {
+    // TODO call "https://api.github.com/users/$($_.github_com_login)/events" or use contributionsCollection.endedAt ?
+    'https://api.github.com/enterprises/$enterprise/audit-log?phrase=created:<=$today+actor:$userName&include=all'
+  }
 
-        // This endpoint has a rate limit of 1,750 queries per hour per user and IP address. If your integration receives a rate limit error (typically a 403 or 429 response)
-    }
+  async getAuditForUser(username, ent) {
+    // TODO call "https://api.github.com/enterprises/$enterprise/audit-log?phrase=created:<=$today+actor:$userName&include=all"
+    // TODO - add per_page=1 if we only need the latest event ?
+    // This endpoint has a rate limit of 1,750 queries per hour per user and IP address. If your integration receives a rate limit error (typically a 403 or 429 response)
+  }
 }
 
 module.exports = { UserManager }
