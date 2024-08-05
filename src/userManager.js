@@ -2,6 +2,10 @@ const core = require('@actions/core')
 // const github = require('@actions/github')
 const { hold_until_rate_limit_success } = require('./rateLimit')
 
+// IMPORTANT
+//   Enterprise API Docs: https://docs.github.com/en/enterprise-cloud@latest/rest/enterprise-admin?apiVersion=2022-11-28
+//   These endpoints only support authentication using a personal access token (classic). For more information, see "Managing your personal access tokens."
+
 class UserManager {
   constructor(token) {
     this.token = token
@@ -35,14 +39,15 @@ class UserManager {
     await this.init()
 
     const query = `
-        query($ent: String!) {
+        query($ent: String!, $cursor: String) {
         enterprise(slug: $ent) {
-            organizations(first: 100) {
+            organizations(first: 100, after: $cursor) {
             nodes {
                 name
                 id
                 url
             }
+            totalCount
             pageInfo {
                 hasNextPage
                 endCursor
@@ -53,12 +58,30 @@ class UserManager {
             `
 
     try {
-      const result = await this.graphql.paginate(query, { ent })
+      const all = []
+      const iterator = await this.graphql.paginate.iterator(query, { ent })
+      let page_check_done = false
 
-      //const result = await this.graphqlWithAuth.paginate(query, { ent })
-      return result.enterprise.organizations.nodes
+      for await (const result of iterator) {
+        const orgs = result.enterprise.organizations.nodes
+        all.push(...orgs)
+
+        // perform a rate limit check if there are more pages
+        page_check_done = !result.enterprise.organizations.pageInfo.hasNextPage
+
+        if (!page_check_done) {
+          const totalCount = result.enterprise.organizations.totalCount
+          core.info(`${totalCount} total orgs. Performing rate limit check...`)
+
+          const totalCalls = Math.ceil(totalCount / 100)
+          await hold_until_rate_limit_success(totalCalls + 10, this.token)
+          page_check_done = true
+        }
+      }
+
+      return all
     } catch (error) {
-      console.error('Error fetching organizations:', error)
+      core.error('Error fetching organizations:', error)
       throw error
     }
   }
@@ -79,6 +102,9 @@ class UserManager {
       )) {
         users.push(...response.data.users)
 
+        // do not perform a rate limit check if we are done
+        page_check_done = response.data.total_seats_consumed <= page_size
+
         // perform a rate limit check after the first page
         if (!page_check_done) {
           core.info(
@@ -88,7 +114,11 @@ class UserManager {
           const totalCalls = Math.ceil(
             response.data.total_seats_consumed / page_size
           )
-          await hold_until_rate_limit_success(totalCalls + 10, this.token)
+          await hold_until_rate_limit_success(
+            totalCalls + 10,
+            this.token,
+            response.headers
+          )
           page_check_done = true
         }
       }
@@ -96,6 +126,210 @@ class UserManager {
       return users
     } catch (error) {
       console.error('Error fetching users consuming licenses:', error)
+      throw error
+    }
+  }
+
+  async getAllUserIdsInOrganization(org) {
+    await this.init()
+
+    const query = `
+        query($org: String!, $cursor: String) {
+        organization(login: $org) {
+            membersWithRole(first: 100, after: $cursor) {
+                nodes {
+                    login
+                }
+                totalCount
+                pageInfo {
+                    hasNextPage
+                    endCursor
+                    }
+                }
+            }
+        }`
+
+    try {
+      const all = []
+      const iterator = await this.graphql.paginate.iterator(query, { org })
+
+      let page_check_done = false
+
+      for await (const result of iterator) {
+        const logins = result.organization.membersWithRole.nodes.map(
+          node => node.login
+        )
+        all.push(...logins)
+
+        // perform a rate limit check if there are more pages
+        page_check_done =
+          !result.organization.membersWithRole.pageInfo.hasNextPage
+
+        if (!page_check_done) {
+          const totalCount = result.organization.membersWithRole.totalCount
+          core.info(`${totalCount} total users. Performing rate limit check...`)
+
+          const totalCalls = Math.ceil(totalCount / 100)
+          await hold_until_rate_limit_success(totalCalls + 10, this.token)
+          page_check_done = true
+        }
+      }
+
+      return all
+    } catch (error) {
+      core.error('Error fetching organizations:', error)
+      throw error
+    }
+  }
+
+  async getOrgsAndTeamsForUser(username) {
+    await this.init()
+
+    // TODO - this returns all organizations, not just the ones in the enterprise
+    // contributionsCollection should work for last activity? https://docs.github.com/en/graphql/reference/objects#contributionscollection
+    const query = `
+  query($username: String!, $cursor: String) {
+    user(login: $username) {
+      contributionsCollection  {
+        endedAt
+      }   
+      organizations(first: 100, after: $cursor) {
+        edges {
+          node {
+            login
+            name
+            description
+            teams(first: 100, userLogins: [$username]) {
+                edges {
+                    node {
+                        name
+                        slug
+                        description
+                    }
+                }
+                totalCount
+                pageInfo {
+                    endCursor
+                    hasNextPage
+                }
+            }
+          }
+        }
+        totalCount
+        pageInfo {
+           endCursor
+           hasNextPage
+        }
+      }
+    }
+  }`
+
+    try {
+      const all = []
+      const iterator = await this.graphql.paginate.iterator(query, {
+        username
+      })
+
+      for await (const result of iterator) {
+        const hasMoreOrgs = result.user.organizations.pageInfo.hasNextPage
+
+        if (hasMoreOrgs) {
+          core.debug(
+            `User ${username} is a member of more than 100 organizations. Results will be paged.`
+          )
+
+          // todo - perform a rate limit check if there are more pages ?
+        }
+
+        // check if there are more teams to fetch
+        for (const org of result.user.organizations.edges) {
+          const orgResult = {
+            org: {
+              login: org.node.login,
+              name: org.node.name,
+              description: org.node.description
+            },
+            teams: org.node.teams.edges.map(edge => edge.node)
+          }
+
+          const hasMoreTeams = org.node.teams.pageInfo.hasNextPage
+          if (hasMoreTeams) {
+            core.warning(
+              `User ${username} is a member of more than 2 teams in organization ${org.node.login}. This script only supports 2 teams.`
+            )
+
+            const teams = await this.getMoreTeamsForUser(
+              username,
+              org.node.login,
+              org.node.teams.pageInfo.endCursor
+            )
+            orgResult.teams.push(...teams)
+          }
+
+          all.push(orgResult)
+        }
+      }
+
+      return all
+    } catch (error) {
+      core.error('Error fetching organizations:', error)
+      throw error
+    }
+  }
+
+  async getMoreTeamsForUser(username, org, cursor) {
+    await this.init()
+
+    const query = `
+    query($username: String!, $org: String!, $cursor: String) {
+        organization(login: $org) {
+            teams(first: 100, after: $cursor, userLogins: [$username]) {
+                nodes {
+                    name
+                    slug
+                    description
+                }
+                totalCount
+                pageInfo {
+                    endCursor
+                    hasNextPage
+                }
+            }
+        }
+    }`
+
+    try {
+      const all = []
+      const iterator = await this.graphql.paginate.iterator(query, {
+        username,
+        org,
+        cursor
+      })
+
+      let page_check_done = false
+
+      for await (const result of iterator) {
+        const teams = result.organization.teams.nodes
+        all.push(...teams)
+
+        // perform a rate limit check if there are more pages
+        page_check_done = !result.organization.teams.pageInfo.hasNextPage
+
+        if (!page_check_done) {
+          const totalCount = result.organization.teams.totalCount
+          core.info(
+            `${totalCount} total teams for ${username} in ${org} org. Performing rate limit check...`
+          )
+
+          const totalCalls = Math.ceil(totalCount / 100)
+          await hold_until_rate_limit_success(totalCalls + 10, this.token)
+          page_check_done = true
+        }
+      }
+
+      return all
+    } catch (error) {
+      core.error(`Error fetching teams for ${username} in ${org} org:`, error)
       throw error
     }
   }
