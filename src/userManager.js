@@ -67,9 +67,10 @@ class UserManager {
         all.push(...orgs)
 
         // perform a rate limit check if there are more pages
-        page_check_done = !result.enterprise.organizations.pageInfo.hasNextPage
-
-        if (!page_check_done) {
+        if (
+          !page_check_done &&
+          result.enterprise.organizations.pageInfo.hasNextPage
+        ) {
           const totalCount = result.enterprise.organizations.totalCount
           core.info(`${totalCount} total orgs. Performing rate limit check...`)
 
@@ -90,7 +91,7 @@ class UserManager {
     await this.init()
 
     try {
-      const page_size = 5
+      const page_size = 100
       const users = []
       let page_check_done = false
 
@@ -102,11 +103,11 @@ class UserManager {
       )) {
         users.push(...response.data.users)
 
-        // do not perform a rate limit check if we are done
-        page_check_done = response.data.total_seats_consumed <= page_size
-
         // perform a rate limit check after the first page
-        if (!page_check_done) {
+        if (
+          !page_check_done &&
+          response.data.total_seats_consumed > page_size
+        ) {
           core.info(
             `${response.data.total_seats_consumed} total users. Performing rate limit check...`
           )
@@ -162,10 +163,10 @@ class UserManager {
         all.push(...logins)
 
         // perform a rate limit check if there are more pages
-        page_check_done =
-          !result.organization.membersWithRole.pageInfo.hasNextPage
-
-        if (!page_check_done) {
+        if (
+          !page_check_done &&
+          result.organization.membersWithRole.pageInfo.hasNextPage
+        ) {
           const totalCount = result.organization.membersWithRole.totalCount
           core.info(`${totalCount} total users. Performing rate limit check...`)
 
@@ -319,9 +320,10 @@ class UserManager {
         all.push(...teams)
 
         // perform a rate limit check if there are more pages
-        page_check_done = !result.organization.teams.pageInfo.hasNextPage
-
-        if (!page_check_done) {
+        if (
+          !page_check_done &&
+          result.organization.teams.pageInfo.hasNextPage
+        ) {
           const totalCount = result.organization.teams.totalCount
           core.info(
             `${totalCount} total teams for ${username} in ${org} org. Performing rate limit check...`
