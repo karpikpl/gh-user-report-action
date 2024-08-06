@@ -177,7 +177,7 @@ class UserManager {
 
       return all
     } catch (error) {
-      core.error('Error fetching organizations:', error)
+      core.error('Error fetching users in organizations:', error)
       throw error
     }
   }
@@ -275,7 +275,10 @@ class UserManager {
 
       return all
     } catch (error) {
-      core.error('Error fetching organizations:', error)
+      core.error(
+        `Error fetching teams and orgs for a user : ${username}`,
+        error
+      )
       throw error
     }
   }
