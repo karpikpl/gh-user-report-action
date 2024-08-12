@@ -1,9 +1,9 @@
 # Get a report about users in the enterprise
 
-[![GitHub Super-Linter](https://github.com/karpikpl/gh-user-action/actions/workflows/linter.yml/badge.svg)](https://github.com/super-linter/super-linter)
-![CI](https://github.com/karpikpl/gh-user-action/actions/workflows/ci.yml/badge.svg)
-[![Check dist/](https://github.com/karpikpl/gh-user-action/actions/workflows/check-dist.yml/badge.svg)](https://github.com/karpikpl/gh-user-action/actions/workflows/check-dist.yml)
-[![CodeQL](https://github.com/karpikpl/gh-user-action/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/karpikpl/gh-user-action/actions/workflows/codeql-analysis.yml)
+[![GitHub Super-Linter](https://github.com/karpikpl/gh-user-report-action/actions/workflows/linter.yml/badge.svg)](https://github.com/super-linter/super-linter)
+![CI](https://github.com/karpikpl/gh-user-report-action/actions/workflows/ci.yml/badge.svg)
+[![Check dist/](https://github.com/karpikpl/gh-user-report-action/actions/workflows/check-dist.yml/badge.svg)](https://github.com/karpikpl/gh-user-report-action/actions/workflows/check-dist.yml)
+[![CodeQL](https://github.com/karpikpl/gh-user-report-action/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/karpikpl/gh-user-report-action/actions/workflows/codeql-analysis.yml)
 [![Coverage](./badges/coverage.svg)](./badges/coverage.svg)
 
 Produce a CSV file with information about all the enterprise users. :rocket:
@@ -31,7 +31,7 @@ See [Enterprise API Docs](https://docs.github.com/en/enterprise-cloud@latest/res
 steps:
   - name: GH Users Report
     id: gh_user_report
-    uses: karpikpl/gh-user-action@v1
+    uses: karpikpl/gh-user-report-action@v1
     with:
       github-enterprise: your-ent-name
       github-pat: ${{ secrets.PAT_NAME_HERE }}
@@ -64,7 +64,7 @@ jobs:
 
       - name: GH Users Report
         id: gh_user_report
-        uses: karpikpl/gh-user-action@v1
+        uses: karpikpl/gh-user-report-action@v1
         with:
           github-enterprise: your-ent-name
           github-pat: ${{ secrets.PAT_NAME_HERE }}
