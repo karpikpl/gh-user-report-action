@@ -29231,10 +29231,10 @@ async function run() {
     const ent = core.getInput('github-enterprise', { required: true })
     const token = core.getInput('github-pat', { required: true })
 
-    await new ReportBuilder(token).buildReport(ent)
+    const path = await new ReportBuilder(token).buildReport(ent)
 
     // Set outputs for other workflow steps to use
-    core.setOutput('file', 'tbd')
+    core.setOutput('file', path)
   } catch (error) {
     // Fail the workflow run if an error occurs
     core.setFailed(error.message)
@@ -29352,7 +29352,7 @@ class ReportBuilder {
   async buildReport(ent) {
     // first get all orgs in the enterprise - this should be 1 API call
     const orgs = await this.manager.getAllOrganizationsInEnterprise(ent)
-    await this.saveReport(orgs, `orgs_in_${ent}`)
+    toCSV(orgs, `orgs_in_${ent}`)
 
     core.info(`Found ${orgs.length} orgs in ${ent}`)
 
@@ -29397,11 +29397,9 @@ class ReportBuilder {
     }
 
     core.info(`Built report for ${report.length} users`)
-    await this.saveReport(report, `users_in_${ent}`)
-  }
+    const csvPath = toCSV(report, `users_in_${ent}`)
 
-  async saveReport(report, type) {
-    toCSV(report, type)
+    return csvPath
   }
 }
 

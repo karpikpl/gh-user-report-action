@@ -56,7 +56,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  cleanup_copilot_licenses:
+  run_users_report:
     runs-on: ubuntu-latest
 
     steps:
