@@ -1,4 +1,4 @@
-# Create a JavaScript Action
+# Get a report about users in the enterprise
 
 [![GitHub Super-Linter](https://github.com/karpikpl/gh-user-action/actions/workflows/linter.yml/badge.svg)](https://github.com/super-linter/super-linter)
 ![CI](https://github.com/karpikpl/gh-user-action/actions/workflows/ci.yml/badge.svg)
