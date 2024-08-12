@@ -18,6 +18,10 @@ permissions:
 that cannot be granted to a workflow or obtained via GitHub application. Please
 use a classic PAT.
 
+See [Enterprise API Docs](https://docs.github.com/en/enterprise-cloud@latest/rest/enterprise-admin?apiVersion=2022-11-28):
+
+> These endpoints only support authentication using a personal access token (classic). For more information, see "Managing your personal access tokens."
+
 - Make sure provided PAT has the appropriate scope for the enterprise the action
   is used for.
 
