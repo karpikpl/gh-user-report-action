@@ -1,16 +1,16 @@
 {
-  "name": "gh-repositories-report",
+  "name": "gh-user-report",
   "description": "GitHub Actions JavaScript Template",
   "version": "1.0.0",
   "author": "Piotr Karpala",
   "private": true,
-  "homepage": "https://github.com/karpikpl/gh-repositories-action#readme",
+  "homepage": "https://github.com/karpikpl/gh-user-action#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/karpikpl/gh-repositories-action.git"
+    "url": "git+https://github.com/karpikpl/gh-user-action.git"
   },
   "bugs": {
-    "url": "https://github.com/karpikpl/gh-repositories-action/issues"
+    "url": "https://github.com/karpikpl/gh-user-action/issues"
   },
   "keywords": [
     "GitHub",

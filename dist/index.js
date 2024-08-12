@@ -29228,10 +29228,10 @@ const { ReportBuilder } = __nccwpck_require__(1794)
  */
 async function run() {
   try {
-    const org = core.getInput('github-ent', { required: true })
+    const ent = core.getInput('github-enterprise', { required: true })
     const token = core.getInput('github-pat', { required: true })
 
-    await new ReportBuilder(token, org).buildReport()
+    await new ReportBuilder(token).buildReport(ent)
 
     // Set outputs for other workflow steps to use
     core.setOutput('file', 'tbd')

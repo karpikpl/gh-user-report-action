@@ -1,5 +1,5 @@
-name: 'Get report for all repositories in the org'
-description: 'Get a CSV report for all repositories in the organization'
+name: 'Get report for all users in the enterprise'
+description: 'Get a CSV report for all users in the enterprise'
 author: 'Piotr Karpala'
 
 # Add your action's branding here. This will appear on the GitHub Marketplace.
@@ -11,10 +11,11 @@ branding:
 inputs:
   github-pat:
     description:
-      'Application token with permissions to read organization repositories'
+      'Classic user token with permissions to read: project, read:enterprise,
+      read:org, user'
     required: true
-  github-org:
-    description: 'The name of the organization check copilot seats for'
+  github-enterprise:
+    description: 'The name of the enterprise to run the report for'
     required: true
 
 # Define your outputs here.

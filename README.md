@@ -1,56 +1,36 @@
 # Create a JavaScript Action
 
-[![GitHub Super-Linter](https://github.com/karpikpl/gh-repositories-action/actions/workflows/linter.yml/badge.svg)](https://github.com/super-linter/super-linter)
-![CI](https://github.com/karpikpl/gh-repositories-action/actions/workflows/ci.yml/badge.svg)
-[![Check dist/](https://github.com/karpikpl/gh-repositories-action/actions/workflows/check-dist.yml/badge.svg)](https://github.com/karpikpl/gh-repositories-action/actions/workflows/check-dist.yml)
-[![CodeQL](https://github.com/karpikpl/gh-repositories-action/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/karpikpl/gh-repositories-action/actions/workflows/codeql-analysis.yml)
+[![GitHub Super-Linter](https://github.com/karpikpl/gh-user-action/actions/workflows/linter.yml/badge.svg)](https://github.com/super-linter/super-linter)
+![CI](https://github.com/karpikpl/gh-user-action/actions/workflows/ci.yml/badge.svg)
+[![Check dist/](https://github.com/karpikpl/gh-user-action/actions/workflows/check-dist.yml/badge.svg)](https://github.com/karpikpl/gh-user-action/actions/workflows/check-dist.yml)
+[![CodeQL](https://github.com/karpikpl/gh-user-action/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/karpikpl/gh-user-action/actions/workflows/codeql-analysis.yml)
 [![Coverage](./badges/coverage.svg)](./badges/coverage.svg)
 
-Produce a CSV file with information about repositories. :rocket:
+Produce a CSV file with information about all the enterprise users. :rocket:
 
 ## Usage
 
-Reading repositories information requires following permissions:
+Reading user information requires classic GitHub token with following
+permissions:
 
-- **manage_billing:copilot**
+- **project, read:enterprise, read:org, user**
 
-that cannot be granted to a workflow. Please either use a PAT or Application
-token:
+that cannot be granted to a workflow or obtained via GitHub application. Please
+use a classic PAT.
 
-- Make sure provided PAT has the appropriate scope for the organization the
-  action is used for.
-
-or
-
-- [Create and install an GitHub App with appropriate scope](GitHubApp.md).
+- Make sure provided PAT has the appropriate scope for the enterprise the action
+  is used for.
 
 ### Using PAT
 
 ```yaml
 steps:
-  - name: GH Repositories Report
-    id: gh_repo_report
-    uses: karpikpl/gh-repositories-action@v1
+  - name: GH Users Report
+    id: gh_user_report
+    uses: karpikpl/gh-user-action@v1
     with:
       github-org: your-org-name
       github-pat: ${{ secrets.PAT_NAME_HERE }}
-```
-
-### Using App token
-
-```yml
-- uses: actions/create-github-app-token@v1
-  id: app-token
-  with:
-    app-id: ${{ vars.APP_ID }}
-    private-key: ${{ secrets.PRIVATE_KEY }}
-
-- name: GH Repositories Report
-  id: gh_repo_report
-  uses: karpikpl/gh-repositories-action@v1
-  with:
-    github-org: your-org-name
-    github-pat: ${{ steps.app-token.outputs.token }}
 ```
 
 ### Detailed example
@@ -58,7 +38,7 @@ steps:
 Example with report upload and action summary.
 
 ```yml
-name: Create Repositories Report
+name: Create Users Report
 
 on:
   # Run automatically when main updated
@@ -78,25 +58,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/create-github-app-token@v1
-        id: app-token
+      - name: GH Users Report
+        id: gh_user_report
+        uses: karpikpl/gh-user-action@v1
         with:
-          app-id: ${{ vars.APP_ID }}
-          private-key: ${{ secrets.PRIVATE_KEY }}
-
-      - name: GH Repositories Report
-        id: gh_repo_report
-        uses: karpikpl/gh-repositories-action@v1
-        with:
-          github-org: your-org-name
+          github-enterprise: your-ent-name
           github-pat: ${{ steps.app-token.outputs.token }}
 
       # upload artifacts
-      - name: Upload repositories report
+      - name: Upload users report
         uses: actions/upload-artifact@v4
         with:
-          name: gh-repo-report
-          path: ${{ steps.gh_repo_report.outputs.file }}
+          name: gh-user-report
+          path: ${{ steps.gh_user_report.outputs.file }}
 
       # create a github summary using github script
       - name: Add Summary
@@ -105,7 +79,7 @@ jobs:
           script: |
             const fs = require('fs');
             // read summary file
-            const data = fs.readFileSync('${{ steps.gh_repo_report.outputs.file }}', 'utf8');
+            const data = fs.readFileSync('${{ steps.gh_user_report.outputs.file }}', 'utf8');
             const csv = data.split('\n').map(row => row.split(','))
             // header
             for (let i = 0; i < csv[0].length; i++) {
@@ -113,7 +87,7 @@ jobs:
             }
 
             await core.summary
-            .addHeading('GH repositories data')
+            .addHeading('GH Users data')
             .addTable(csv)
             .write()
 ```
@@ -122,12 +96,12 @@ jobs:
 
 ### `github-pat`
 
-**Required** GitHub personal access token or application token with permissions
-to manage_billing:copilot.
+**Required** GitHub personal access token with permissions: project,
+read:enterprise, read:org, user.
 
-### `github-org`
+### `github-enterprise`
 
-**Required** Name of the GitHub organization.
+**Required** Name of the GitHub enterprise.
 
 ## Outputs
 
