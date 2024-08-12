@@ -29,7 +29,7 @@ steps:
     id: gh_user_report
     uses: karpikpl/gh-user-action@v1
     with:
-      github-org: your-org-name
+      github-enterprise: your-ent-name
       github-pat: ${{ secrets.PAT_NAME_HERE }}
 ```
 
@@ -63,7 +63,7 @@ jobs:
         uses: karpikpl/gh-user-action@v1
         with:
           github-enterprise: your-ent-name
-          github-pat: ${{ steps.app-token.outputs.token }}
+          github-pat: ${{ secrets.PAT_NAME_HERE }}
 
       # upload artifacts
       - name: Upload users report
