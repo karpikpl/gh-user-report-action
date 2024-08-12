@@ -25,7 +25,8 @@ class ReportBuilder {
     for (const user of users) {
       const userReport = await this.manager.getOrgsAndTeamsForUser(
         user.github_com_login,
-        ent
+        ent,
+        orgName => orgs.find(o => o.name === orgName)
       )
       report.push({
         github_com_login: user.github_com_login,
@@ -33,8 +34,9 @@ class ReportBuilder {
         visual_studio_subscription_user: user.visual_studio_subscription_user,
         license_type: user.license_type,
         github_com_profile: user.github_com_profile,
-        github_com_enterprise_roles: user.github_com_enterprise_roles,
-        github_com_member_roles: user.github_com_member_roles,
+        github_com_enterprise_roles:
+          user.github_com_enterprise_roles.join(', '),
+        github_com_member_roles: user.github_com_member_roles.join(', '),
         github_com_verified_domain_emails:
           user.github_com_verified_domain_emails,
         github_com_saml_name_id: user.github_com_saml_name_id,
@@ -50,7 +52,7 @@ class ReportBuilder {
               : 'No Teams'
           )
           .join(','),
-        orgs: userReport.map(o => o.login).join(',')
+        orgs: userReport.map(o => o.org.login).join(',')
       })
     }
 

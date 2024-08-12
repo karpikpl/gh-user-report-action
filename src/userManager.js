@@ -183,7 +183,7 @@ class UserManager {
     }
   }
 
-  async getOrgsAndTeamsForUser(username) {
+  async getOrgsAndTeamsForUser(username, enterprise, orgFilter) {
     await this.init()
 
     // TODO - this returns all organizations, not just the ones in the enterprise
@@ -270,10 +270,17 @@ class UserManager {
             orgResult.teams.push(...teams)
           }
 
+          if (orgFilter && !orgFilter(org.node.login)) {
+            core.warning(
+              `Skipping org ${org.node.login} as it is not in the enterprise`
+            )
+            continue
+          }
           all.push(orgResult)
         }
       }
 
+      // remove orgs that are not in the enterprise
       return all
     } catch (error) {
       core.error(
