@@ -18,9 +18,11 @@ permissions:
 that cannot be granted to a workflow or obtained via GitHub application. Please
 use a classic PAT.
 
-See [Enterprise API Docs](https://docs.github.com/en/enterprise-cloud@latest/rest/enterprise-admin?apiVersion=2022-11-28):
+See
+[Enterprise API Docs](https://docs.github.com/en/enterprise-cloud@latest/rest/enterprise-admin?apiVersion=2022-11-28):
 
-> These endpoints only support authentication using a personal access token (classic). For more information, see "Managing your personal access tokens."
+> These endpoints only support authentication using a personal access token
+> (classic). For more information, see "Managing your personal access tokens."
 
 - Make sure provided PAT has the appropriate scope for the enterprise the action
   is used for.
@@ -84,7 +86,7 @@ jobs:
             const fs = require('fs');
             // read summary file
             const data = fs.readFileSync('${{ steps.gh_user_report.outputs.file }}', 'utf8');
-            const csv = data.split('\n').map(row => row.split(','))
+            const csv = data.split('\n').map(row => row.split(';'))
             // header
             for (let i = 0; i < csv[0].length; i++) {
                 csv[0][i] = { data: csv[0][i], header: true };

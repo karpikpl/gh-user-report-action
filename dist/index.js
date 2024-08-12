@@ -29196,7 +29196,9 @@ const core = __nccwpck_require__(2186)
 const fs = __nccwpck_require__(7147)
 
 function toCSV(data, type) {
-  const opts = {}
+  const opts = {
+    delimiter: ';'
+  }
   const parser = new Parser(opts)
   const csv = parser.parse(data)
   const csvPath = `github_${type}_output.csv`

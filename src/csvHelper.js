@@ -3,7 +3,9 @@ const core = require('@actions/core')
 const fs = require('fs')
 
 function toCSV(data, type) {
-  const opts = {}
+  const opts = {
+    delimiter: ';'
+  }
   const parser = new Parser(opts)
   const csv = parser.parse(data)
   const csvPath = `github_${type}_output.csv`
