@@ -15,6 +15,9 @@ async function run() {
     core.setOutput('file', path)
   } catch (error) {
     // Fail the workflow run if an error occurs
+    if(error.message === 'Cannot read properties of null (reading \'hasOwnProperty\')') {
+      core.warning('🔥 Most likely authentication to GitHub failed. Please check your token and verify SSO was configured for it.')
+    }
     core.setFailed(error.message)
   }
 }
