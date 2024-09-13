@@ -82,7 +82,7 @@ class UserManager {
 
       return all
     } catch (error) {
-      core.error('Error fetching organizations:', error)
+      core.error(`Error fetching organizations for ${ent}:`, error)
       throw error
     }
   }

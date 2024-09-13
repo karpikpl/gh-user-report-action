@@ -9,12 +9,14 @@ class ReportBuilder {
 
   async buildReport(ent) {
     // first get all orgs in the enterprise - this should be 1 API call
+    core.info(`Getting orgs in ${ent}`)
     const orgs = await this.manager.getAllOrganizationsInEnterprise(ent)
     toCSV(orgs, `orgs_in_${ent}`)
 
     core.info(`Found ${orgs.length} orgs in ${ent}`)
 
     // get all the users in the enterprise - number_of_users / 100 API calls
+    core.info(`Getting users in ${ent}`)
     const users = await this.manager.getConsumedLicenses(ent)
 
     core.info(`Found ${users.length} users in ${ent}`)
