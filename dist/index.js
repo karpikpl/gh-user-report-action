@@ -29239,6 +29239,14 @@ async function run() {
     core.setOutput('file', path)
   } catch (error) {
     // Fail the workflow run if an error occurs
+    if (
+      error.message ===
+      "Cannot read properties of null (reading 'hasOwnProperty')"
+    ) {
+      core.warning(
+        '🔥 Most likely authentication to GitHub failed or GitHub returned NULL. Please check your enterprise name and token and verify SSO was configured for it.'
+      )
+    }
     core.setFailed(error.message)
   }
 }
@@ -29353,15 +29361,19 @@ class ReportBuilder {
 
   async buildReport(ent) {
     // first get all orgs in the enterprise - this should be 1 API call
+    core.info(`Getting orgs in '${ent}'`)
     const orgs = await this.manager.getAllOrganizationsInEnterprise(ent)
     toCSV(orgs, `orgs_in_${ent}`)
 
-    core.info(`Found ${orgs.length} orgs in ${ent}`)
+    core.info(`Found ${orgs.length} orgs in '${ent}'`)
 
     // get all the users in the enterprise - number_of_users / 100 API calls
+    core.info(`Getting users in '${ent}'`)
     const users = await this.manager.getConsumedLicenses(ent)
+    core.info(`Found ${users.length} users in '${ent}'`)
 
-    core.info(`Found ${users.length} users in ${ent}`)
+    core.info(`Getting last 50 pages of audit log for '${ent}'`)
+    const auditLogDict = await this.manager.getLast50PagesOfAuditLog(ent, 1)
 
     // this is were it gets tricky - for each user we need to get the orgs and teams they are in
     // this is where we need to be careful with the rate limit
@@ -29372,32 +29384,59 @@ class ReportBuilder {
         ent,
         orgName => orgs.find(o => o.name === orgName)
       )
-      report.push({
+
+      // get the last activity for the user
+      if (auditLogDict[user.github_com_login]) {
+        user.lastActivityAudit = auditLogDict[user.github_com_login]
+      } else {
+        user.lastActivityAudit = await this.manager.getLastActivityForUser(
+          user.github_com_login,
+          ent
+        )
+      }
+
+      const newEntry = {
         github_com_login: user.github_com_login,
         github_com_name: user.github_com_name,
         visual_studio_subscription_user: user.visual_studio_subscription_user,
         license_type: user.license_type,
         github_com_profile: user.github_com_profile,
-        github_com_enterprise_roles:
-          user.github_com_enterprise_roles.join(', '),
-        github_com_member_roles: user.github_com_member_roles.join(', '),
-        github_com_verified_domain_emails:
-          user.github_com_verified_domain_emails,
-        github_com_saml_name_id: user.github_com_saml_name_id,
-        github_com_orgs_with_pending_invites:
-          user.github_com_orgs_with_pending_invites,
-        github_com_two_factor_auth: user.github_com_two_factor_auth,
-        visual_studio_license_status: user.visual_studio_license_status,
-        visual_studio_subscription_email: user.visual_studio_subscription_email,
-        teams: userReport
+        'Account Creation Date': user.created_at,
+        'User Team Membership': userReport
           .map(o =>
             o.teams && o.teams.length > 0
               ? o.teams.map(t => t.name).join(',')
               : 'No Teams'
           )
           .join(','),
-        orgs: userReport.map(o => o.org.login).join(',')
-      })
+        'User Organization Membership': userReport
+          .map(o => o.org.login)
+          .join(','),
+        'Last Activity Profile': 'n/a',
+        'Last Activity Audit Log': user.lastActivityAudit,
+        'Enterprise Roles': user.github_com_enterprise_roles.join(', '),
+        'Member Roles': user.github_com_member_roles.join(', '),
+        'Verified Domain E-Mails':
+          user.github_com_verified_domain_emails.join(','),
+        github_com_saml_name_id: user.github_com_saml_name_id,
+        'Pending Invites': user.github_com_orgs_with_pending_invites.join(','),
+        github_com_two_factor_auth: user.github_com_two_factor_auth,
+        'VS License Status': user.visual_studio_license_status,
+        'VS Subscription E-mail': user.visual_studio_subscription_email
+      }
+
+      // for all the properties added to the report, remove newlines
+      const objectKeys = Object.keys(newEntry)
+
+      for (const key of objectKeys) {
+        if (newEntry[key] && typeof newEntry[key] === 'string') {
+          newEntry[key] = newEntry[key]
+            .replace(/[\r\n]+/gm, '')
+            .replace('+rok', '')
+        }
+      }
+
+      report.push(newEntry)
     }
 
     core.info(`Built report for ${report.length} users`)
@@ -29499,7 +29538,7 @@ class UserManager {
 
       return all
     } catch (error) {
-      core.error('Error fetching organizations:', error)
+      core.error(`Error fetching organizations for '${ent}':`, error)
       throw error
     }
   }
@@ -29766,15 +29805,99 @@ class UserManager {
     }
   }
 
-  async getLastActivityForUser(username) {
-    // TODO call "https://api.github.com/users/$($_.github_com_login)/events" or use contributionsCollection.endedAt ?
-    'https://api.github.com/enterprises/$enterprise/audit-log?phrase=created:<=$today+actor:$userName&include=all'
+  async getLastActivityForUser(username, ent) {
+    await this.init()
+
+    try {
+      const date = new Date().toISOString().split('T')[0]
+      const phrase = `created:<=${date} actor:${username}`
+      const encodedPhrase = encodeURIComponent(phrase)
+
+      const response = await this.octokit.request(
+        `GET /enterprises/${ent}/audit-log?per_page=1&phrase=${encodedPhrase}`
+      )
+
+      // perform a rate limit check by reading X-RateLimit-Remaining header
+      const remaining = parseInt(response.headers['x-ratelimit-remaining'])
+      core.info(
+        `Audit Log API has a rate limit of 1,750 queries per hour per user and IP address. Rate limit check - ${remaining} remaining`
+      )
+      if (remaining < 10) {
+        core.info('Rate limit approaching, waiting for 60 seconds...')
+        await new Promise(resolve => setTimeout(resolve, 60000))
+      }
+
+      if (response.data.length === 0) {
+        // no activity found
+        return null
+      }
+
+      const unixTimestamp = response.data[0]['@timestamp']
+      return new Date(unixTimestamp)
+    } catch (error) {
+      core.error(
+        `Error fetching last activity for ${username} in '${ent}' enterprise.`,
+        error
+      )
+      throw error
+    }
   }
 
-  async getAuditForUser(username, ent) {
-    // TODO call "https://api.github.com/enterprises/$enterprise/audit-log?phrase=created:<=$today+actor:$userName&include=all"
-    // TODO - add per_page=1 if we only need the latest event ?
+  async getLast50PagesOfAuditLog(ent, pages = 50) {
     // This endpoint has a rate limit of 1,750 queries per hour per user and IP address. If your integration receives a rate limit error (typically a 403 or 429 response)
+
+    // make direct call to the API
+    await this.init()
+    const userDict = {}
+    const phrase =
+      'action:user -actor:github-actions[bot] -actor:dependabot[bot] -action:org.register_self_hosted_runner -action:workflows'
+    const encodedPhrase = encodeURIComponent(phrase)
+
+    try {
+      for (let page = 1; page < pages; page++) {
+        // const response = await this.octokit.request(`GET /enterprises/${ent}/audit-log?phrase=created:<=${date}&include=all&per_page=100&page=${page}`);
+        const response = await this.octokit.request(
+          `GET /enterprises/${ent}/audit-log?per_page=100&page=${page}&phrase=${encodedPhrase}`
+        )
+
+        const events = response.data
+        for (const event of events) {
+          const actor = event.actor
+
+          if (!actor) {
+            core.warning(`Event ${event.id} has no actor`)
+            continue
+          }
+
+          if (!userDict[actor]) {
+            // convert UNIX timestamp to human readable date
+            const unixTimestamp = event['@timestamp']
+            const date = new Date(unixTimestamp)
+            userDict[actor] = date
+          }
+        }
+
+        // check if there are more pages
+        if (events.length < 100) {
+          break
+        }
+
+        // perform a rate limit check by reading X-RateLimit-Remaining header
+        const remaining = parseInt(response.headers['x-ratelimit-remaining'])
+        core.info(
+          `Audit Log API has a rate limit of 1,750 queries per hour per user and IP address. Rate limit check after ${page} pages - ${remaining} remaining`
+        )
+        if (remaining < 10) {
+          core.info('Rate limit approaching, waiting for 60 seconds...')
+          await new Promise(resolve => setTimeout(resolve, 60000))
+        }
+      }
+
+      return userDict
+    } catch (error) {
+      core.error(`Error fetching audit log in '${ent}' enterprise.`, error)
+      throw error
+    }
   }
 }
 
