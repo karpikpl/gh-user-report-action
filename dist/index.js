@@ -29232,8 +29232,14 @@ async function run() {
   try {
     const ent = core.getInput('github-enterprise', { required: true })
     const token = core.getInput('github-pat', { required: true })
+    const getLastActivityDate = core.getBooleanInput('get-last-activity-date', {
+      required: false
+    })
 
-    const path = await new ReportBuilder(token).buildReport(ent)
+    const path = await new ReportBuilder(token).buildReport(
+      ent,
+      getLastActivityDate
+    )
 
     // Set outputs for other workflow steps to use
     core.setOutput('file', path)
@@ -29359,13 +29365,21 @@ class ReportBuilder {
     this.manager = new UserManager(token)
   }
 
-  async buildReport(ent) {
+  /**
+   * Build a report for the given enterprise.
+   * @param {string} ent The enterprise name.
+   * @param {boolean} getLastActivityDate Whether to get the last activity date.
+   * @returns {Promise<string>} The path to the CSV file.
+   */
+  async buildReport(ent, getLastActivityDate) {
     // first get all orgs in the enterprise - this should be 1 API call
     core.info(`Getting orgs in '${ent}'`)
     const orgs = await this.manager.getAllOrganizationsInEnterprise(ent)
     toCSV(orgs, `orgs_in_${ent}`)
 
-    core.info(`Found ${orgs.length} orgs in '${ent}'`)
+    core.info(
+      `Found ${orgs.length} orgs in '${ent}': ${orgs.map(o => `'${o.login}'`).join(', ')}`
+    )
 
     // get all the users in the enterprise - number_of_users / 100 API calls
     core.info(`Getting users in '${ent}'`)
@@ -29379,20 +29393,29 @@ class ReportBuilder {
     // this is where we need to be careful with the rate limit
     const report = []
     for (const user of users) {
+      const percentComplete = Math.floor((report.length / users.length) * 100)
+      core.info(
+        `${percentComplete}%. Building report for ${user.github_com_login}.`
+      )
+
       const userReport = await this.manager.getOrgsAndTeamsForUser(
         user.github_com_login,
         ent,
-        orgName => orgs.find(o => o.name === orgName)
+        orgName => orgs.find(o => o.login === orgName)
       )
 
-      // get the last activity for the user
-      if (auditLogDict[user.github_com_login]) {
-        user.lastActivityAudit = auditLogDict[user.github_com_login]
+      if (getLastActivityDate) {
+        // get the last activity for the user
+        if (auditLogDict[user.github_com_login]) {
+          user.lastActivityAudit = auditLogDict[user.github_com_login]
+        } else {
+          user.lastActivityAudit = await this.manager.getLastActivityForUser(
+            user.github_com_login,
+            ent
+          )
+        }
       } else {
-        user.lastActivityAudit = await this.manager.getLastActivityForUser(
-          user.github_com_login,
-          ent
-        )
+        core.warning('⚠️Skipping GitHub audit call to get last activity date.')
       }
 
       const newEntry = {
@@ -29499,7 +29522,7 @@ class UserManager {
         enterprise(slug: $ent) {
             organizations(first: 100, after: $cursor) {
             nodes {
-                name
+                login
                 id
                 url
             }
@@ -29701,8 +29724,14 @@ class UserManager {
           // todo - perform a rate limit check if there are more pages ?
         }
 
-        // check if there are more teams to fetch
         for (const org of result.user.organizations.edges) {
+          if (orgFilter && !orgFilter(org.node.login)) {
+            core.warning(
+              `⚠️ Skipping org ${org.node.login} as it is not in the enterprise`
+            )
+            continue
+          }
+
           const orgResult = {
             org: {
               login: org.node.login,
@@ -29714,10 +29743,6 @@ class UserManager {
 
           const hasMoreTeams = org.node.teams.pageInfo.hasNextPage
           if (hasMoreTeams) {
-            core.warning(
-              `User ${username} is a member of more than 2 teams in organization ${org.node.login}. This script only supports 2 teams.`
-            )
-
             const teams = await this.getMoreTeamsForUser(
               username,
               org.node.login,
@@ -29726,12 +29751,6 @@ class UserManager {
             orgResult.teams.push(...teams)
           }
 
-          if (orgFilter && !orgFilter(org.node.login)) {
-            core.warning(
-              `Skipping org ${org.node.login} as it is not in the enterprise`
-            )
-            continue
-          }
           all.push(orgResult)
         }
       }
@@ -29822,9 +29841,9 @@ class UserManager {
       core.info(
         `Audit Log API has a rate limit of 1,750 queries per hour per user and IP address. Rate limit check - ${remaining} remaining`
       )
-      if (remaining < 10) {
-        core.info('Rate limit approaching, waiting for 60 seconds...')
-        await new Promise(resolve => setTimeout(resolve, 60000))
+      if (remaining < 25) {
+        core.info('Rate limit approaching, waiting for 5 minutes...')
+        await new Promise(resolve => setTimeout(resolve, 5 * 60000))
       }
 
       if (response.data.length === 0) {
