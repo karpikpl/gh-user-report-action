@@ -7,13 +7,21 @@ class ReportBuilder {
     this.manager = new UserManager(token)
   }
 
-  async buildReport(ent) {
+  /**
+   * Build a report for the given enterprise.
+   * @param {string} ent The enterprise name.
+   * @param {boolean} getLastActivityDate Whether to get the last activity date.
+   * @returns {Promise<string>} The path to the CSV file.
+   */
+  async buildReport(ent, getLastActivityDate) {
     // first get all orgs in the enterprise - this should be 1 API call
     core.info(`Getting orgs in '${ent}'`)
     const orgs = await this.manager.getAllOrganizationsInEnterprise(ent)
     toCSV(orgs, `orgs_in_${ent}`)
 
-    core.info(`Found ${orgs.length} orgs in '${ent}'`)
+    core.info(
+      `Found ${orgs.length} orgs in '${ent}': ${orgs.map(o => `'${o.login}'`).join(', ')}`
+    )
 
     // get all the users in the enterprise - number_of_users / 100 API calls
     core.info(`Getting users in '${ent}'`)
@@ -27,20 +35,29 @@ class ReportBuilder {
     // this is where we need to be careful with the rate limit
     const report = []
     for (const user of users) {
+      const percentComplete = Math.floor((report.length / users.length) * 100)
+      core.info(
+        `${percentComplete}%. Building report for ${user.github_com_login}.`
+      )
+
       const userReport = await this.manager.getOrgsAndTeamsForUser(
         user.github_com_login,
         ent,
-        orgName => orgs.find(o => o.name === orgName)
+        orgName => orgs.find(o => o.login === orgName)
       )
 
-      // get the last activity for the user
-      if (auditLogDict[user.github_com_login]) {
-        user.lastActivityAudit = auditLogDict[user.github_com_login]
+      if (getLastActivityDate) {
+        // get the last activity for the user
+        if (auditLogDict[user.github_com_login]) {
+          user.lastActivityAudit = auditLogDict[user.github_com_login]
+        } else {
+          user.lastActivityAudit = await this.manager.getLastActivityForUser(
+            user.github_com_login,
+            ent
+          )
+        }
       } else {
-        user.lastActivityAudit = await this.manager.getLastActivityForUser(
-          user.github_com_login,
-          ent
-        )
+        core.warning('⚠️Skipping GitHub audit call to get last activity date.')
       }
 
       const newEntry = {

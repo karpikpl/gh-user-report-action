@@ -43,7 +43,7 @@ class UserManager {
         enterprise(slug: $ent) {
             organizations(first: 100, after: $cursor) {
             nodes {
-                name
+                login
                 id
                 url
             }
@@ -245,8 +245,14 @@ class UserManager {
           // todo - perform a rate limit check if there are more pages ?
         }
 
-        // check if there are more teams to fetch
         for (const org of result.user.organizations.edges) {
+          if (orgFilter && !orgFilter(org.node.login)) {
+            core.warning(
+              `⚠️ Skipping org ${org.node.login} as it is not in the enterprise`
+            )
+            continue
+          }
+
           const orgResult = {
             org: {
               login: org.node.login,
@@ -258,10 +264,6 @@ class UserManager {
 
           const hasMoreTeams = org.node.teams.pageInfo.hasNextPage
           if (hasMoreTeams) {
-            core.warning(
-              `User ${username} is a member of more than 2 teams in organization ${org.node.login}. This script only supports 2 teams.`
-            )
-
             const teams = await this.getMoreTeamsForUser(
               username,
               org.node.login,
@@ -270,12 +272,6 @@ class UserManager {
             orgResult.teams.push(...teams)
           }
 
-          if (orgFilter && !orgFilter(org.node.login)) {
-            core.warning(
-              `Skipping org ${org.node.login} as it is not in the enterprise`
-            )
-            continue
-          }
           all.push(orgResult)
         }
       }
@@ -366,9 +362,9 @@ class UserManager {
       core.info(
         `Audit Log API has a rate limit of 1,750 queries per hour per user and IP address. Rate limit check - ${remaining} remaining`
       )
-      if (remaining < 10) {
-        core.info('Rate limit approaching, waiting for 60 seconds...')
-        await new Promise(resolve => setTimeout(resolve, 60000))
+      if (remaining < 25) {
+        core.info('Rate limit approaching, waiting for 5 minutes...')
+        await new Promise(resolve => setTimeout(resolve, 5 * 60000))
       }
 
       if (response.data.length === 0) {

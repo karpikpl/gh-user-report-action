@@ -109,6 +109,10 @@ read:enterprise, read:org, user.
 
 **Required** Name of the GitHub enterprise.
 
+### `get-last-activity-date`
+
+**Optional** Should GitHub audit log be used to read users last activity date.
+
 ## Outputs
 
 ### `file`

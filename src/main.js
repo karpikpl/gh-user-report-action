@@ -8,8 +8,14 @@ async function run() {
   try {
     const ent = core.getInput('github-enterprise', { required: true })
     const token = core.getInput('github-pat', { required: true })
+    const getLastActivityDate = core.getBooleanInput('get-last-activity-date', {
+      required: false
+    })
 
-    const path = await new ReportBuilder(token).buildReport(ent)
+    const path = await new ReportBuilder(token).buildReport(
+      ent,
+      getLastActivityDate
+    )
 
     // Set outputs for other workflow steps to use
     core.setOutput('file', path)
