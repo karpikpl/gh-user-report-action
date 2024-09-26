@@ -39,6 +39,26 @@ steps:
       github-pat: ${{ secrets.PAT_NAME_HERE }}
 ```
 
+### Caching audit results in table storage
+
+Audit API calls have a very low rate limit - only 1750 calls per IP per hour. In order to get users last activity date, results can be cached in Azure Table Storage.
+Cache is refreshed every time the action runs, by taking 1750 oldest records and updating their values.
+
+```yaml
+steps:
+  - name: GH Users Report
+    id: gh_user_report
+    uses: karpikpl/gh-user-report-action@v1
+    with:
+      github-enterprise: your-ent-name
+      github-pat: ${{ secrets.PAT_NAME_HERE }}
+      table-storage-connection-string: ${{ secrets.TABLE_STORAGE_CONNECTION_STRING }}
+```
+
+To create table storage connection string, use the "Shared access signature" feature. Only access to table storage is required.
+
+![Shared access signature](./img/sas.png)
+
 ### Detailed example
 
 Example with report upload and action summary.
