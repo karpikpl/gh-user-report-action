@@ -6,12 +6,28 @@ const { hold_until_rate_limit_success } = require('./rateLimit')
 //   Enterprise API Docs: https://docs.github.com/en/enterprise-cloud@latest/rest/enterprise-admin?apiVersion=2022-11-28
 //   These endpoints only support authentication using a personal access token (classic). For more information, see "Managing your personal access tokens."
 
+/**
+ * The UserManager class.
+ * @class
+ * @classdesc A class for managing users.
+ * @property {string} token The GitHub token.
+ */
 class UserManager {
   constructor(token) {
     this.token = token
   }
 
-  async init() {
+  /**
+   * Initialize the UserManager.
+   * @returns {Promise<void>} Resolves when the UserManager is initialized.
+   * @async
+   * @function
+   * @instance
+   * @memberof UserManager
+   * @name init
+   * @access protected
+   */
+  async #init() {
     if (this.graphql) {
       return
     }
@@ -35,8 +51,20 @@ class UserManager {
     await hold_until_rate_limit_success(100, this.token)
   }
 
+  /**
+   * Get all organizations in an enterprise.
+   * @param {string} ent The enterprise name.
+   * @returns {Promise<Array<{login: string, id: string, url: string}>>} The organizations in the enterprise.
+   * @async
+   * @function
+   * @instance
+   * @memberof UserManager
+   * @name getAllOrganizationsInEnterprise
+   * @access public
+   * @throws {Error} Throws an error if there is an issue fetching the organizations.
+   */
   async getAllOrganizationsInEnterprise(ent) {
-    await this.init()
+    await this.#init()
 
     const query = `
         query($ent: String!, $cursor: String) {
@@ -58,8 +86,11 @@ class UserManager {
             `
 
     try {
+      /**
+       * @type {Array<{login: string, id: string, url: string}>}
+       */
       const all = []
-      const iterator = await this.graphql.paginate.iterator(query, { ent })
+      const iterator = this.graphql.paginate.iterator(query, { ent })
       let page_check_done = false
 
       for await (const result of iterator) {
@@ -87,8 +118,39 @@ class UserManager {
     }
   }
 
+  /**
+   * Get all users consuming licenses in an enterprise.
+   * @param {string} ent The enterprise name.
+   * @returns {Promise<Array<{
+   * github_com_login : string,
+   * github_com_name: string?,
+   * enterprise_server_user_ids : Array<string>,
+   * github_com_user : boolean,
+   * enterprise_server_user: boolean?,
+   * visual_studio_subscription_user : boolean,
+   * license_type : string,
+   * github_com_profile: string?,
+   * github_com_member_roles : Array<string>,
+   * github_com_enterprise_roles : Array<string>,
+   * github_com_verified_domain_emails : Array<string>,
+   * github_com_saml_name_id: string?,
+   * github_com_orgs_with_pending_invites : Array<string>,
+   * github_com_two_factor_auth: boolean?,
+   * enterprise_server_emails : Array<string>,
+   * visual_studio_license_status: string?,
+   * visual_studio_subscription_email: string?,
+   * total_user_accounts : integer
+   * }>>} The users consuming licenses in the enterprise.
+   * @async
+   * @function
+   * @instance
+   * @memberof UserManager
+   * @name getConsumedLicenses
+   * @access public
+   * @throws {Error} Throws an error if there is an issue fetching the users.
+   */
   async getConsumedLicenses(ent) {
-    await this.init()
+    await this.#init()
 
     try {
       const page_size = 100
@@ -131,8 +193,20 @@ class UserManager {
     }
   }
 
+  /**
+   * Get all user IDs in an organization.
+   * @param {string} org The organization name.
+   * @returns {Promise<Array<string>} The user IDs in the organization.
+   * @async
+   * @function
+   * @instance
+   * @memberof UserManager
+   * @name getAllUserIdsInOrganization
+   * @access public
+   * @throws {Error} Throws an error if there is an issue fetching the users.
+   */
   async getAllUserIdsInOrganization(org) {
-    await this.init()
+    await this.#init()
 
     const query = `
         query($org: String!, $cursor: String) {
@@ -184,7 +258,7 @@ class UserManager {
   }
 
   async getOrgsAndTeamsForUser(username, enterprise, orgFilter) {
-    await this.init()
+    await this.#init()
 
     // TODO - this returns all organizations, not just the ones in the enterprise
     // contributionsCollection should work for last activity? https://docs.github.com/en/graphql/reference/objects#contributionscollection
@@ -288,7 +362,7 @@ class UserManager {
   }
 
   async getMoreTeamsForUser(username, org, cursor) {
-    await this.init()
+    await this.#init()
 
     const query = `
     query($username: String!, $org: String!, $cursor: String) {
@@ -345,8 +419,15 @@ class UserManager {
     }
   }
 
-  async getLastActivityForUser(username, ent) {
-    await this.init()
+  /**
+   * Get the last activity for a user in an enterprise.
+   * @param {string} username the GitHub username
+   * @param {string} ent the enterprise name
+   * @param {boolean} sleepOnRateLimit
+   * @returns {Promise<{lastActivityDate: Date, rateLimitRemaining: int}>}
+   */
+  async getLastActivityForUser(username, ent, sleepOnRateLimit = true) {
+    await this.#init()
 
     try {
       const date = new Date().toISOString().split('T')[0]
@@ -362,18 +443,24 @@ class UserManager {
       core.info(
         `Audit Log API has a rate limit of 1,750 queries per hour per user and IP address. Rate limit check - ${remaining} remaining`
       )
-      if (remaining < 25) {
+      if (remaining < 25 && sleepOnRateLimit) {
         core.info('Rate limit approaching, waiting for 5 minutes...')
         await new Promise(resolve => setTimeout(resolve, 5 * 60000))
       }
 
       if (response.data.length === 0) {
         // no activity found
-        return null
+        return {
+          lastActivityDate: null,
+          rateLimitRemaining: remaining
+        }
       }
 
       const unixTimestamp = response.data[0]['@timestamp']
-      return new Date(unixTimestamp)
+      return {
+        lastActivityDate: new Date(unixTimestamp),
+        rateLimitRemaining: remaining
+      }
     } catch (error) {
       core.error(
         `Error fetching last activity for ${username} in '${ent}' enterprise.`,
@@ -387,7 +474,7 @@ class UserManager {
     // This endpoint has a rate limit of 1,750 queries per hour per user and IP address. If your integration receives a rate limit error (typically a 403 or 429 response)
 
     // make direct call to the API
-    await this.init()
+    await this.#init()
     const userDict = {}
     const phrase =
       'action:user -actor:github-actions[bot] -actor:dependabot[bot] -action:org.register_self_hosted_runner -action:workflows'

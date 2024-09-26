@@ -104,3 +104,5 @@ __tests__/runner/*
 local.http
 src/test.js
 test.http
+src/github_orgs_in_ms-mfg-us-app-inno_output.csv
+src/github_users_in_ms-mfg-us-app-inno_output.csv

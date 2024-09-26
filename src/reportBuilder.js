@@ -1,35 +1,62 @@
 const { UserManager } = require('./userManager')
 const { toCSV } = require('./csvHelper')
+const { LastActivityProvider } = require('./lastActivityprovider')
 const core = require('@actions/core')
 
 class ReportBuilder {
-  constructor(token) {
+  /**
+   * Creates a new instance of the ReportBuilder.
+   * @param {string} token The GitHub token.
+   * @param {string} tableStorageConnectionString Connection String to Azure Table Storage.
+   * @param {string} ent The enterprise name
+   * @returns {ReportBuilder} The new instance.
+   * @constructor
+   * @property {UserManager} manager The user manager.
+   * @property {LastActivityProvider} lastActivityProvider The last activity provider.
+   * @property {string} ent The enterprise name.
+   */
+  constructor(token, tableStorageConnectionString, ent) {
+    // Validate input parameters
+    if (typeof token !== 'string' || token.trim() === '') {
+      throw new Error('Invalid GitHub token. It must be a non-empty string.')
+    }
+    if (typeof ent !== 'string' || ent.trim() === '') {
+      throw new Error('Invalid enterprise name. It must be a non-empty string.')
+    }
+
     this.manager = new UserManager(token)
+    this.ent = ent
+    this.lastActivityProvider = new LastActivityProvider(
+      this.manager,
+      tableStorageConnectionString,
+      ent
+    )
   }
 
   /**
    * Build a report for the given enterprise.
-   * @param {string} ent The enterprise name.
-   * @param {boolean} getLastActivityDate Whether to get the last activity date.
+   * @param {string} storageAccount The Azure Storage account name.
+   * @param {string} storageSas The Azure Storage SAS token.
    * @returns {Promise<string>} The path to the CSV file.
    */
-  async buildReport(ent, getLastActivityDate) {
+  async buildReport() {
     // first get all orgs in the enterprise - this should be 1 API call
-    core.info(`Getting orgs in '${ent}'`)
-    const orgs = await this.manager.getAllOrganizationsInEnterprise(ent)
-    toCSV(orgs, `orgs_in_${ent}`)
+    core.info(`Getting orgs in '${this.ent}'`)
+    const orgs = await this.manager.getAllOrganizationsInEnterprise(this.ent)
+    toCSV(orgs, `orgs_in_${this.ent}`)
 
     core.info(
-      `Found ${orgs.length} orgs in '${ent}': ${orgs.map(o => `'${o.login}'`).join(', ')}`
+      `Found ${orgs.length} orgs in '${this.ent}': ${orgs.map(o => `'${o.login}'`).join(', ')}`
     )
 
     // get all the users in the enterprise - number_of_users / 100 API calls
-    core.info(`Getting users in '${ent}'`)
-    const users = await this.manager.getConsumedLicenses(ent)
-    core.info(`Found ${users.length} users in '${ent}'`)
+    core.info(`Getting users in '${this.ent}'`)
+    const users = await this.manager.getConsumedLicenses(this.ent)
+    core.info(`Found ${users.length} users in '${this.ent}'`)
 
-    core.info(`Getting last 50 pages of audit log for '${ent}'`)
-    const auditLogDict = await this.manager.getLast50PagesOfAuditLog(ent, 1)
+    // initialize the last activity provider
+    await this.lastActivityProvider.initialize(users)
+    await this.lastActivityProvider.refreshUserData()
 
     // this is were it gets tricky - for each user we need to get the orgs and teams they are in
     // this is where we need to be careful with the rate limit
@@ -42,23 +69,16 @@ class ReportBuilder {
 
       const userReport = await this.manager.getOrgsAndTeamsForUser(
         user.github_com_login,
-        ent,
+        this.ent,
         orgName => orgs.find(o => o.login === orgName)
       )
 
-      if (getLastActivityDate) {
-        // get the last activity for the user
-        if (auditLogDict[user.github_com_login]) {
-          user.lastActivityAudit = auditLogDict[user.github_com_login]
-        } else {
-          user.lastActivityAudit = await this.manager.getLastActivityForUser(
-            user.github_com_login,
-            ent
-          )
-        }
-      } else {
-        core.warning('⚠️Skipping GitHub audit call to get last activity date.')
-      }
+      const lastActivityAudit =
+        await this.lastActivityProvider.getLastActivityDateForUser(
+          user.github_com_login
+        )
+      user.lastActivityAudit = lastActivityAudit.lastActivityDate
+      user.lastActivityAuditChecked = lastActivityAudit.lastChecked
 
       const newEntry = {
         github_com_login: user.github_com_login,
@@ -79,6 +99,7 @@ class ReportBuilder {
           .join(','),
         'Last Activity Profile': 'n/a',
         'Last Activity Audit Log': user.lastActivityAudit,
+        'Last Activity Audit Log Checked': user.lastActivityAuditChecked,
         'Enterprise Roles': user.github_com_enterprise_roles.join(', '),
         'Member Roles': user.github_com_member_roles.join(', '),
         'Verified Domain E-Mails':
@@ -105,7 +126,7 @@ class ReportBuilder {
     }
 
     core.info(`Built report for ${report.length} users`)
-    const csvPath = toCSV(report, `users_in_${ent}`)
+    const csvPath = toCSV(report, `users_in_${this.ent}`)
 
     return csvPath
   }

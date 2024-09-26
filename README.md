@@ -109,9 +109,10 @@ read:enterprise, read:org, user.
 
 **Required** Name of the GitHub enterprise.
 
-### `get-last-activity-date`
+### `table-storage-connection-string`
 
-**Optional** Should GitHub audit log be used to read users last activity date.
+**Optional** Connection string to Azure Storage Account Table Storage for
+storing users last activity date
 
 ## Outputs
 
