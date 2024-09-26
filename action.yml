@@ -17,10 +17,9 @@ inputs:
   github-enterprise:
     description: 'The name of the enterprise to run the report for'
     required: true
-  get-last-activity-date:
-    description: 'Get the last activity date for each user'
+  table-storage-connection-string:
+    description: 'Connection string to the Azure Table Storage'
     required: false
-    default: 'false'
 
 # Define your outputs here.
 outputs:
