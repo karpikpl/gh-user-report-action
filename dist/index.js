@@ -39581,6 +39581,20 @@ class UserManager {
     }
   }
 
+  /**
+   * Get all organizations and teams for a user in an enterprise. Returns only the organizations that are in the enterprise.
+   * In case of an error, it will return an empty array.
+   * @param {string} username The GitHub username.
+   * @param {string} enterprise The enterprise name.
+   * @param {function(string): boolean} orgFilter A function to filter organizations.
+   * @returns {Promise<Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}>} The organizations and teams for the user.
+   * @async
+   * @function
+   * @instance
+   * @memberof UserManager
+   * @name getOrgsAndTeamsForUser
+   * @access public
+   */
   async getOrgsAndTeamsForUser(username, enterprise, orgFilter) {
     await this.#init()
 
@@ -39627,6 +39641,9 @@ class UserManager {
   }`
 
     try {
+      /**
+       * @type {Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}>}
+       */
       const all = []
       const iterator = await this.graphql.paginate.iterator(query, {
         username
@@ -39681,7 +39698,8 @@ class UserManager {
         `Error fetching teams and orgs for a user : ${username}`,
         error
       )
-      throw error
+      // do not throw error, just return empty array
+      return []
     }
   }
 
