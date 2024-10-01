@@ -13,7 +13,7 @@ Produce a CSV file with information about all the enterprise users. :rocket:
 Reading user information requires classic GitHub token with following
 permissions:
 
-- **project, read:enterprise, read:org, user**
+- **project, read:enterprise, read:org, user, manage_billing:copilot**
 
 that cannot be granted to a workflow or obtained via GitHub application. Please
 use a classic PAT.
@@ -127,7 +127,7 @@ jobs:
 ### `github-pat`
 
 **Required** GitHub personal access token with permissions: project,
-read:enterprise, read:org, user.
+read:enterprise, read:org, user, manage_billing:copilot.
 
 ### `github-enterprise`
 
