@@ -58,6 +58,12 @@ class ReportBuilder {
     await this.lastActivityProvider.initialize(users)
     await this.lastActivityProvider.refreshUserData()
 
+    core.info(`Getting copilot seats 💺💺💺 in '${this.ent}'`)
+    const copilotSeats = await this.manager.getCopilotSeats(this.ent)
+    core.info(
+      `Found ${copilotSeats.size} copilot seats 💺💺💺 in '${this.ent}'`
+    )
+
     // this is were it gets tricky - for each user we need to get the orgs and teams they are in
     // this is where we need to be careful with the rate limit
     const report = []
@@ -108,7 +114,22 @@ class ReportBuilder {
         'Pending Invites': user.github_com_orgs_with_pending_invites.join(','),
         github_com_two_factor_auth: user.github_com_two_factor_auth,
         'VS License Status': user.visual_studio_license_status,
-        'VS Subscription E-mail': user.visual_studio_subscription_email
+        'VS Subscription E-mail': user.visual_studio_subscription_email,
+        'Copilot Created At':
+          copilotSeats.get(user.github_com_login)?.created_at ?? '',
+        'Copilot Updated At':
+          copilotSeats.get(user.github_com_login)?.updated_at ?? '',
+        'Copilot Last Activity At':
+          copilotSeats.get(user.github_com_login)?.last_activity_at ?? '',
+        'Copilot Last Activity Editor':
+          copilotSeats.get(user.github_com_login)?.last_activity_editor ?? '',
+        'Copilot Assigning Team':
+          copilotSeats.get(user.github_com_login)?.assigning_team?.name ?? '',
+        'Copilot Assigning Org':
+          copilotSeats.get(user.github_com_login)?.organization?.login ?? '',
+        'Copilot Pending Cancellation Date':
+          copilotSeats.get(user.github_com_login)?.pending_cancellation_date ??
+          ''
       }
 
       // for all the properties added to the report, remove newlines

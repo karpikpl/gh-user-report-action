@@ -38693,7 +38693,7 @@ const fs = __nccwpck_require__(7147)
 
 function toCSV(data, type) {
   const opts = {
-    delimiter: ';'
+    delimiter: ','
   }
   const parser = new Parser(opts)
   const csv = parser.parse(data)
@@ -39119,6 +39119,12 @@ class ReportBuilder {
     await this.lastActivityProvider.initialize(users)
     await this.lastActivityProvider.refreshUserData()
 
+    core.info(`Getting copilot seats 💺💺💺 in '${this.ent}'`)
+    const copilotSeats = await this.manager.getCopilotSeats(this.ent)
+    core.info(
+      `Found ${copilotSeats.size} copilot seats 💺💺💺 in '${this.ent}'`
+    )
+
     // this is were it gets tricky - for each user we need to get the orgs and teams they are in
     // this is where we need to be careful with the rate limit
     const report = []
@@ -39169,7 +39175,22 @@ class ReportBuilder {
         'Pending Invites': user.github_com_orgs_with_pending_invites.join(','),
         github_com_two_factor_auth: user.github_com_two_factor_auth,
         'VS License Status': user.visual_studio_license_status,
-        'VS Subscription E-mail': user.visual_studio_subscription_email
+        'VS Subscription E-mail': user.visual_studio_subscription_email,
+        'Copilot Created At':
+          copilotSeats.get(user.github_com_login)?.created_at ?? '',
+        'Copilot Updated At':
+          copilotSeats.get(user.github_com_login)?.updated_at ?? '',
+        'Copilot Last Activity At':
+          copilotSeats.get(user.github_com_login)?.last_activity_at ?? '',
+        'Copilot Last Activity Editor':
+          copilotSeats.get(user.github_com_login)?.last_activity_editor ?? '',
+        'Copilot Assigning Team':
+          copilotSeats.get(user.github_com_login)?.assigning_team?.name ?? '',
+        'Copilot Assigning Org':
+          copilotSeats.get(user.github_com_login)?.organization?.login ?? '',
+        'Copilot Pending Cancellation Date':
+          copilotSeats.get(user.github_com_login)?.pending_cancellation_date ??
+          ''
       }
 
       // for all the properties added to the report, remove newlines
@@ -39604,9 +39625,6 @@ class UserManager {
     const query = `
   query($username: String!, $cursor: String) {
     user(login: $username) {
-      contributionsCollection  {
-        endedAt
-      }
       createdAt
       organizations(first: 100, after: $cursor) {
         edges {
@@ -39865,6 +39883,62 @@ class UserManager {
       return userDict
     } catch (error) {
       core.error(`Error fetching audit log in '${ent}' enterprise.`, error)
+      throw error
+    }
+  }
+
+  /**
+   * Get the copilot seats for an enterprise.
+   * @param {string} ent The enterprise name.
+   * @returns {Promise<Map<string, {created_at: string, updated_at: string, pending_cancellation_date: string, last_activity_at: string, last_activity_editor: string, assignee: {login: string}, assigning_team: {slug: string}, organization: {login: string}}>} The map with copilot seats for the enterprise where the key is the assignee login.
+   * @async
+   * @function
+   * @instance
+   * @memberof UserManager
+   * @name getCopilotUsage
+   * @access public
+   * @throws {Error} Throws an error if there is an issue fetching the copilot usage.
+   */
+  async getCopilotSeats(ent) {
+    await this.#init()
+
+    try {
+      const page_size = 100
+      /**
+       * @type {Array<{created_at: string, updated_at: string, pending_cancellation_date: string, last_activity_at: string, last_activity_editor: string, assignee: {login: string}, assigning_team: {slug: string}, organization: {login: string}>}
+       */
+      const seats = []
+      let page_check_done = false
+
+      for await (const response of this.octokit.paginate.iterator(
+        `GET /enterprises/${ent}/copilot/billing/seats`,
+        {
+          per_page: page_size
+        }
+      )) {
+        seats.push(...response.data.seats)
+
+        // perform a rate limit check after the first page
+        if (!page_check_done && response.data.total_seats > page_size) {
+          core.info(
+            `${response.data.total_seats} total seats. Performing rate limit check...`
+          )
+
+          const totalCalls = Math.ceil(response.data.total_seats / page_size)
+          await hold_until_rate_limit_success(
+            totalCalls + 10,
+            this.token,
+            response.headers
+          )
+          page_check_done = true
+        }
+      }
+
+      // convert seats to object
+      const map = new Map(seats.map(seat => [seat.assignee.login, seat]))
+      return map
+    } catch (error) {
+      console.error('Error fetching copilot billing seats:', error)
       throw error
     }
   }

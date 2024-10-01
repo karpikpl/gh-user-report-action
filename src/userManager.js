@@ -280,9 +280,6 @@ class UserManager {
     const query = `
   query($username: String!, $cursor: String) {
     user(login: $username) {
-      contributionsCollection  {
-        endedAt
-      }
       createdAt
       organizations(first: 100, after: $cursor) {
         edges {
@@ -541,6 +538,62 @@ class UserManager {
       return userDict
     } catch (error) {
       core.error(`Error fetching audit log in '${ent}' enterprise.`, error)
+      throw error
+    }
+  }
+
+  /**
+   * Get the copilot seats for an enterprise.
+   * @param {string} ent The enterprise name.
+   * @returns {Promise<Map<string, {created_at: string, updated_at: string, pending_cancellation_date: string, last_activity_at: string, last_activity_editor: string, assignee: {login: string}, assigning_team: {slug: string}, organization: {login: string}}>} The map with copilot seats for the enterprise where the key is the assignee login.
+   * @async
+   * @function
+   * @instance
+   * @memberof UserManager
+   * @name getCopilotUsage
+   * @access public
+   * @throws {Error} Throws an error if there is an issue fetching the copilot usage.
+   */
+  async getCopilotSeats(ent) {
+    await this.#init()
+
+    try {
+      const page_size = 100
+      /**
+       * @type {Array<{created_at: string, updated_at: string, pending_cancellation_date: string, last_activity_at: string, last_activity_editor: string, assignee: {login: string}, assigning_team: {slug: string}, organization: {login: string}>}
+       */
+      const seats = []
+      let page_check_done = false
+
+      for await (const response of this.octokit.paginate.iterator(
+        `GET /enterprises/${ent}/copilot/billing/seats`,
+        {
+          per_page: page_size
+        }
+      )) {
+        seats.push(...response.data.seats)
+
+        // perform a rate limit check after the first page
+        if (!page_check_done && response.data.total_seats > page_size) {
+          core.info(
+            `${response.data.total_seats} total seats. Performing rate limit check...`
+          )
+
+          const totalCalls = Math.ceil(response.data.total_seats / page_size)
+          await hold_until_rate_limit_success(
+            totalCalls + 10,
+            this.token,
+            response.headers
+          )
+          page_check_done = true
+        }
+      }
+
+      // convert seats to object
+      const map = new Map(seats.map(seat => [seat.assignee.login, seat]))
+      return map
+    } catch (error) {
+      console.error('Error fetching copilot billing seats:', error)
       throw error
     }
   }

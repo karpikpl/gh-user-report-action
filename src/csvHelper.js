@@ -4,7 +4,7 @@ const fs = require('fs')
 
 function toCSV(data, type) {
   const opts = {
-    delimiter: ';'
+    delimiter: ','
   }
   const parser = new Parser(opts)
   const csv = parser.parse(data)
