@@ -263,7 +263,7 @@ class UserManager {
    * @param {string} username The GitHub username.
    * @param {string} enterprise The enterprise name.
    * @param {function(string): boolean} orgFilter A function to filter organizations.
-   * @returns {Promise<Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}>} The organizations and teams for the user.
+   * @returns {Promise<{created_at: string, orgs: Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}}>} The organizations and teams for the user.
    * @async
    * @function
    * @instance
@@ -277,7 +277,6 @@ class UserManager {
     // TODO - this returns all organizations, not just the ones in the enterprise
     // contributionsCollection should work for last activity? https://docs.github.com/en/graphql/reference/objects#contributionscollection
 
-    // TODO check if createdAt is needed - original script has it
     const query = `
   query($username: String!, $cursor: String) {
     user(login: $username) {
@@ -318,15 +317,16 @@ class UserManager {
 
     try {
       /**
-       * @type {Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}>}
+       * @type { created_at: string, orgs: Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}>}
        */
-      const all = []
+      const userWithOrgs = { orgs: [], created_at: null }
       const iterator = await this.graphql.paginate.iterator(query, {
         username
       })
 
       for await (const result of iterator) {
         const hasMoreOrgs = result.user.organizations.pageInfo.hasNextPage
+        userWithOrgs.created_at = result.user.createdAt
 
         if (hasMoreOrgs) {
           core.debug(
@@ -363,19 +363,19 @@ class UserManager {
             orgResult.teams.push(...teams)
           }
 
-          all.push(orgResult)
+          userWithOrgs.orgs.push(orgResult)
         }
       }
 
       // remove orgs that are not in the enterprise
-      return all
+      return userWithOrgs
     } catch (error) {
       core.error(
         `Error fetching teams and orgs for a user : ${username}`,
         error
       )
       // do not throw error, just return empty array
-      return []
+      return { orgs: [], created_at: null }
     }
   }
 

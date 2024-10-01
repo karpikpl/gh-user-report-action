@@ -39147,15 +39147,15 @@ class ReportBuilder {
         visual_studio_subscription_user: user.visual_studio_subscription_user,
         license_type: user.license_type,
         github_com_profile: user.github_com_profile,
-        'Account Creation Date': user.created_at,
-        'User Team Membership': userReport
+        'Account Creation Date': userReport.created_at,
+        'User Team Membership': userReport.orgs
           .map(o =>
             o.teams && o.teams.length > 0
               ? o.teams.map(t => t.name).join(',')
               : 'No Teams'
           )
           .join(','),
-        'User Organization Membership': userReport
+        'User Organization Membership': userReport.orgs
           .map(o => o.org.login)
           .join(','),
         'Last Activity Profile': 'n/a',
@@ -39587,7 +39587,7 @@ class UserManager {
    * @param {string} username The GitHub username.
    * @param {string} enterprise The enterprise name.
    * @param {function(string): boolean} orgFilter A function to filter organizations.
-   * @returns {Promise<Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}>} The organizations and teams for the user.
+   * @returns {Promise<{created_at: string, orgs: Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}}>} The organizations and teams for the user.
    * @async
    * @function
    * @instance
@@ -39601,7 +39601,6 @@ class UserManager {
     // TODO - this returns all organizations, not just the ones in the enterprise
     // contributionsCollection should work for last activity? https://docs.github.com/en/graphql/reference/objects#contributionscollection
 
-    // TODO check if createdAt is needed - original script has it
     const query = `
   query($username: String!, $cursor: String) {
     user(login: $username) {
@@ -39642,15 +39641,16 @@ class UserManager {
 
     try {
       /**
-       * @type {Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}>}
+       * @type { created_at: string, orgs: Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}>}
        */
-      const all = []
+      const userWithOrgs = { orgs: [], created_at: null }
       const iterator = await this.graphql.paginate.iterator(query, {
         username
       })
 
       for await (const result of iterator) {
         const hasMoreOrgs = result.user.organizations.pageInfo.hasNextPage
+        userWithOrgs.created_at = result.user.createdAt
 
         if (hasMoreOrgs) {
           core.debug(
@@ -39687,19 +39687,19 @@ class UserManager {
             orgResult.teams.push(...teams)
           }
 
-          all.push(orgResult)
+          userWithOrgs.orgs.push(orgResult)
         }
       }
 
       // remove orgs that are not in the enterprise
-      return all
+      return userWithOrgs
     } catch (error) {
       core.error(
         `Error fetching teams and orgs for a user : ${username}`,
         error
       )
       // do not throw error, just return empty array
-      return []
+      return { orgs: [], created_at: null }
     }
   }
 

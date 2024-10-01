@@ -86,15 +86,15 @@ class ReportBuilder {
         visual_studio_subscription_user: user.visual_studio_subscription_user,
         license_type: user.license_type,
         github_com_profile: user.github_com_profile,
-        'Account Creation Date': user.created_at,
-        'User Team Membership': userReport
+        'Account Creation Date': userReport.created_at,
+        'User Team Membership': userReport.orgs
           .map(o =>
             o.teams && o.teams.length > 0
               ? o.teams.map(t => t.name).join(',')
               : 'No Teams'
           )
           .join(','),
-        'User Organization Membership': userReport
+        'User Organization Membership': userReport.orgs
           .map(o => o.org.login)
           .join(','),
         'Last Activity Profile': 'n/a',
