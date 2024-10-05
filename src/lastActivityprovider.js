@@ -27,6 +27,7 @@ class LastActivityProvider {
     this.rateLimitRemaining = 1750 // assume we have 1750 calls left
 
     if (tableStorageConnectionString) {
+      core.info(`Using Azure Table Storage for Audit Cache.`)
       this.tableClient = new StorageTableClient(tableStorageConnectionString)
     }
   }
@@ -72,6 +73,8 @@ class LastActivityProvider {
       }
 
       this.users = await this.tableClient.getAll()
+    } else {
+      core.warning(`⚠️ No Azure Table Storage connection string provided.`)
     }
   }
 
