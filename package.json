@@ -69,8 +69,8 @@
     "@azure/data-tables": "^13.2.2",
     "@json2csv/plainjs": "^7.0.6",
     "@octokit/graphql": "^8.1.1",
-    "@octokit/plugin-paginate-graphql": "^5.2.2",
-    "@octokit/plugin-paginate-rest": "^11.3.3"
+    "@octokit/plugin-paginate-graphql": "^5.2.3",
+    "@octokit/plugin-paginate-rest": "^11.3.5"
   },
   "devDependencies": {
     "@babel/core": "^7.24.9",
