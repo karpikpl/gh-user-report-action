@@ -274,9 +274,8 @@ class UserManager {
   async getOrgsAndTeamsForUser(username, enterprise, orgFilter) {
     await this.#init()
 
+    core.info(`Getting orgs and teams for ${username}`)
     // TODO - this returns all organizations, not just the ones in the enterprise
-    // contributionsCollection should work for last activity? https://docs.github.com/en/graphql/reference/objects#contributionscollection
-
     const query = `
   query($username: String!, $cursor: String) {
     user(login: $username) {
@@ -365,6 +364,11 @@ class UserManager {
       }
 
       // remove orgs that are not in the enterprise
+      const teams_count = userWithOrgs.orgs.reduce(
+        (acc, org) => acc + org.teams.length,
+        0
+      )
+      core.info(`Found ${userWithOrgs.orgs.length} orgs with ${teams_count} teams for ${username}`)
       return userWithOrgs
     } catch (error) {
       core.error(
