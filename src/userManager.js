@@ -113,7 +113,7 @@ class UserManager {
 
       return all
     } catch (error) {
-      core.error(`Error fetching organizations for '${ent}':`, error)
+      core.error(`Error fetching organizations for '${ent}':`)
       throw error
     }
   }
@@ -252,16 +252,16 @@ class UserManager {
 
       return all
     } catch (error) {
-      core.error('Error fetching users in organizations:', error)
+      core.error(`Error fetching users in organization '${org}':`)
       throw error
     }
   }
 
   /**
-   * Get all organizations and teams for a user in an enterprise. Returns only the organizations that are in the enterprise.
+   * Get all organizations and teams for a user in an enterprise. Returns only the organizations that are in the enterprise using provided filter.
+   * Query returns only public organizations.
    * In case of an error, it will return an empty array.
    * @param {string} username The GitHub username.
-   * @param {string} enterprise The enterprise name.
    * @param {function(string): boolean} orgFilter A function to filter organizations.
    * @returns {Promise<{created_at: string, orgs: Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}}>} The organizations and teams for the user.
    * @async
@@ -271,7 +271,7 @@ class UserManager {
    * @name getOrgsAndTeamsForUser
    * @access public
    */
-  async getOrgsAndTeamsForUser(username, enterprise, orgFilter) {
+  async getOrgsAndTeamsForUser(username, orgFilter) {
     await this.#init()
 
     core.info(`Getting orgs and teams for ${username}`)
@@ -368,15 +368,123 @@ class UserManager {
         (acc, org) => acc + org.teams.length,
         0
       )
-      core.info(`Found ${userWithOrgs.orgs.length} orgs with ${teams_count} teams for ${username}`)
+      core.info(
+        `Found ${userWithOrgs.orgs.length} orgs with ${teams_count} teams for ${username}`
+      )
       return userWithOrgs
     } catch (error) {
-      core.error(
-        `Error fetching teams and orgs for a user : ${username}`,
-        error
-      )
+      core.error(`Error fetching teams and orgs for a user : ${username}`)
       // do not throw error, just return empty array
       return { orgs: [], created_at: null }
+    }
+  }
+
+  /**
+   * Get all teams for a user in an enterprise. Returns only teams from the organizations that are in the enterprise.
+   * In case of an error, it will return an empty array.
+   * @param {string} username The GitHub username.
+   * @param {string} enterprise The enterprise name.
+   * @returns {Promise<{orgs: Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}}>} The organizations and teams for the user.
+   * @async
+   * @function
+   * @instance
+   * @memberof UserManager
+   * @name getTeamsForUser
+   * @access public
+   */
+  async getTeamsForUser(username, enterprise) {
+    await this.#init()
+
+    core.info(`Getting teams for ${username} in ${enterprise}`)
+    // TODO - this returns all organizations, not just the ones in the enterprise
+    const query = `
+query($ent: String!, $cursor: String, $username: String!) {
+enterprise(slug: $ent) {
+    organizations(first: 100, after: $cursor) {
+    nodes {
+        name
+        description
+        login
+        id
+        url
+        teams(first: 100, userLogins: [$username]) {
+          edges {
+            node {
+              name
+              slug
+              description
+            }
+          }
+          pageInfo {
+            endCursor
+            hasNextPage
+          }
+        }
+    }
+    totalCount
+    pageInfo {
+        hasNextPage
+        endCursor
+        }
+    }
+  }
+}`
+
+    try {
+      /**
+       * @type { orgs: Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}>}
+       */
+      const userWithOrgs = { orgs: [] }
+      const iterator = await this.graphql.paginate.iterator(query, {
+        ent: enterprise,
+        username
+      })
+
+      for await (const result of iterator) {
+        const hasMoreOrgs = result.enterprise.organizations.pageInfo.hasNextPage
+
+        if (hasMoreOrgs) {
+          core.debug(
+            `User ${username} is a member of more than 100 organizations. Results will be paged.`
+          )
+
+          // todo - perform a rate limit check if there are more pages ?
+        }
+
+        for (const org of result.enterprise.organizations.nodes) {
+          const orgResult = {
+            org: {
+              login: org.login,
+              name: org.name,
+              description: org.description
+            },
+            teams: org.teams.edges.map(edge => edge.node)
+          }
+
+          const hasMoreTeams = org.teams.pageInfo.hasNextPage
+          if (hasMoreTeams) {
+            const teams = await this.getMoreTeamsForUser(
+              username,
+              org.login,
+              org.teams.pageInfo.endCursor
+            )
+            orgResult.teams.push(...teams)
+          }
+
+          userWithOrgs.orgs.push(orgResult)
+        }
+      }
+
+      const teams_count = userWithOrgs.orgs.reduce(
+        (acc, org) => acc + org.teams.length,
+        0
+      )
+      core.info(`Found ${teams_count} teams for ${username}`)
+      return userWithOrgs
+    } catch (error) {
+      core.error(`Error fetching teams and orgs for a user : ${username}`)
+      // do not throw error, just return empty array
+      return { orgs: [] }
     }
   }
 
@@ -433,7 +541,7 @@ class UserManager {
 
       return all
     } catch (error) {
-      core.error(`Error fetching teams for ${username} in ${org} org:`, error)
+      core.error(`Error fetching teams for ${username} in ${org} org:`)
       throw error
     }
   }
@@ -485,8 +593,7 @@ class UserManager {
       }
     } catch (error) {
       core.error(
-        `Error fetching last activity for ${username} in '${ent}' enterprise.`,
-        error
+        `Error fetching last activity for ${username} in '${ent}' enterprise.`
       )
       throw error
     }
