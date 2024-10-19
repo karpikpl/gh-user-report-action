@@ -110,7 +110,8 @@ jobs:
             const fs = require('fs');
             // read summary file
             const data = fs.readFileSync('${{ steps.gh_user_report.outputs.file }}', 'utf8');
-            const csv = data.split('\n').map(row => row.split(';'))
+            const pattern = RegExp(',(?=(?:[^"]*"[^"]*")*[^"]*$)');
+            const csv = data.split('\n').map(row => row.split(pattern).map(val => val.replaceAll('"','')))
             // header
             for (let i = 0; i < csv[0].length; i++) {
                 csv[0][i] = { data: csv[0][i], header: true };
