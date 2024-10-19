@@ -73,10 +73,9 @@ class ReportBuilder {
         `${percentComplete}%. Building report for ${user.github_com_login}.`
       )
 
-      const userReport = await this.manager.getOrgsAndTeamsForUser(
+      const userTeamsReport = await this.manager.getTeamsForUser(
         user.github_com_login,
-        this.ent,
-        orgName => orgs.find(o => o.login === orgName)
+        this.ent
       )
 
       const lastActivityAudit =
@@ -92,16 +91,19 @@ class ReportBuilder {
         visual_studio_subscription_user: user.visual_studio_subscription_user,
         license_type: user.license_type,
         github_com_profile: user.github_com_profile,
-        'Account Creation Date': userReport.created_at,
-        'User Team Membership': userReport.orgs
-          .map(o =>
-            o.teams && o.teams.length > 0
-              ? o.teams.map(t => t.name).join(',')
-              : 'No Teams'
-          )
+        'Account Creation Date': userTeamsReport.created_at,
+        'User Team Membership': userTeamsReport.orgs
+          .map(o => o.teams)
+          .filter(t => t)
+          .flat()
+          .map(t => t.name)
           .join(','),
-        'User Organization Membership': userReport.orgs
-          .map(o => o.org.login)
+        'User Organization Membership': user.github_com_member_roles
+          .map(r => r.split(':')[0])
+          .join(','),
+        'User Organization Ownership': user.github_com_member_roles
+          .filter(r => r.endsWith(':Owner'))
+          .map(r => r.split(':')[0])
           .join(','),
         'Last Activity Profile': 'n/a',
         'Last Activity Audit Log': user.lastActivityAudit,

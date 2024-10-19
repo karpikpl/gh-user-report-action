@@ -22,6 +22,7 @@ async function run() {
     // Set outputs for other workflow steps to use
     core.setOutput('file', path)
   } catch (error) {
+    core.error(error)
     // Fail the workflow run if an error occurs
     if (
       error.message ===
