@@ -1,16 +1,7 @@
 const { UserManager } = require('../src/userManager')
 const { hold_until_rate_limit_success } = require('../src/rateLimit')
-// const { graphql } = require('@octokit/graphql');
 const core = require('@actions/core')
-const github = require('@actions/github')
 
-// Mock the graphql and core modules
-jest.mock('@octokit/graphql')
-jest.mock('@actions/core')
-jest.mock('@octokit/core')
-jest.mock('@octokit/plugin-paginate-rest')
-jest.mock('@octokit/plugin-paginate-graphql')
-jest.mock('@actions/github')
 jest.mock('../src/rateLimit')
 
 describe('UserManager', () => {
@@ -21,27 +12,21 @@ describe('UserManager', () => {
   const ent = 'test-enterprise'
 
   beforeEach(async () => {
-    // ignore import/no-unresolved for dynamic imports
-    // eslint-disable-next-line import/no-unresolved
-    const Octokit = await import('@octokit/core')
-    // eslint-disable-next-line import/no-unresolved
-    const paginateGraphQL = await import('@octokit/plugin-paginate-graphql')
-    // eslint-disable-next-line import/no-unresolved
-    const paginateRest = await import('@octokit/plugin-paginate-rest')
-
-    const NewOctokit = Octokit.Octokit.plugin(
-      paginateGraphQL.paginateGraphQL,
-      paginateRest.paginateRest
-    )
-    octokit = new NewOctokit({ auth: token })
-    graphql = octokit.graphql
-
-    octokit.request = jest.fn()
-    graphql.paginate = jest.fn()
-    graphql.paginate.iterator = jest.fn()
+    octokit = {
+      paginate: {
+        iterator: jest.fn()
+      },
+      request: jest.fn()
+    }
+    graphql = {
+      paginate: {
+        iterator: jest.fn()
+      }
+    }
 
     userManager = new UserManager(token)
     userManager.graphql = graphql
+    userManager.octokit = octokit
     core.info = jest.fn()
     core.error = jest.fn()
 
@@ -109,7 +94,7 @@ describe('UserManager', () => {
       userManager.getAllOrganizationsInEnterprise(ent)
     ).rejects.toThrow(errorMessage)
     expect(core.error).toHaveBeenCalledWith(
-      `Error fetching organizations for '${ent}':`
+      `Error fetching organizations for '${ent}'`
     )
   })
 

@@ -113,7 +113,7 @@ class UserManager {
 
       return all
     } catch (error) {
-      core.error(`Error fetching organizations for '${ent}':`)
+      core.error(`Error fetching organizations for '${ent}'`)
       throw error
     }
   }
@@ -188,7 +188,7 @@ class UserManager {
 
       return users
     } catch (error) {
-      console.error('Error fetching users consuming licenses:', error)
+      core.error(`Error fetching users consuming licenses in '${ent}'`)
       throw error
     }
   }
