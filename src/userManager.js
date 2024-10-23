@@ -464,7 +464,7 @@ enterprise(slug: $ent) {
       const map = new Map(seats.map(seat => [seat.assignee.login, seat]))
       return map
     } catch (error) {
-      console.error('Error fetching copilot billing seats:', error)
+      core.error(`Error fetching copilot billing seats in '${ent}'`)
       throw error
     }
   }
