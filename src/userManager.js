@@ -113,7 +113,7 @@ class UserManager {
 
       return all
     } catch (error) {
-      core.error(`Error fetching organizations for '${ent}':`)
+      core.error(`Error fetching organizations for '${ent}'`)
       throw error
     }
   }
@@ -188,194 +188,8 @@ class UserManager {
 
       return users
     } catch (error) {
-      console.error('Error fetching users consuming licenses:', error)
+      core.error(`Error fetching users consuming licenses in '${ent}'`)
       throw error
-    }
-  }
-
-  /**
-   * Get all user IDs in an organization.
-   * @param {string} org The organization name.
-   * @returns {Promise<Array<string>} The user IDs in the organization.
-   * @async
-   * @function
-   * @instance
-   * @memberof UserManager
-   * @name getAllUserIdsInOrganization
-   * @access public
-   * @throws {Error} Throws an error if there is an issue fetching the users.
-   */
-  async getAllUserIdsInOrganization(org) {
-    await this.#init()
-
-    const query = `
-        query($org: String!, $cursor: String) {
-        organization(login: $org) {
-            membersWithRole(first: 100, after: $cursor) {
-                nodes {
-                    login
-                }
-                totalCount
-                pageInfo {
-                    hasNextPage
-                    endCursor
-                    }
-                }
-            }
-        }`
-
-    try {
-      const all = []
-      const iterator = await this.graphql.paginate.iterator(query, { org })
-
-      let page_check_done = false
-
-      for await (const result of iterator) {
-        const logins = result.organization.membersWithRole.nodes.map(
-          node => node.login
-        )
-        all.push(...logins)
-
-        // perform a rate limit check if there are more pages
-        if (
-          !page_check_done &&
-          result.organization.membersWithRole.pageInfo.hasNextPage
-        ) {
-          const totalCount = result.organization.membersWithRole.totalCount
-          core.info(`${totalCount} total users. Performing rate limit check...`)
-
-          const totalCalls = Math.ceil(totalCount / 100)
-          await hold_until_rate_limit_success(totalCalls + 10, this.token)
-          page_check_done = true
-        }
-      }
-
-      return all
-    } catch (error) {
-      core.error(`Error fetching users in organization '${org}':`)
-      throw error
-    }
-  }
-
-  /**
-   * Get all organizations and teams for a user in an enterprise. Returns only the organizations that are in the enterprise using provided filter.
-   * Query returns only public organizations.
-   * In case of an error, it will return an empty array.
-   * @param {string} username The GitHub username.
-   * @param {function(string): boolean} orgFilter A function to filter organizations.
-   * @returns {Promise<{created_at: string, orgs: Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}}>} The organizations and teams for the user.
-   * @async
-   * @function
-   * @instance
-   * @memberof UserManager
-   * @name getOrgsAndTeamsForUser
-   * @access public
-   */
-  async getOrgsAndTeamsForUser(username, orgFilter) {
-    await this.#init()
-
-    core.info(`Getting orgs and teams for ${username}`)
-    // TODO - this returns all organizations, not just the ones in the enterprise
-    const query = `
-  query($username: String!, $cursor: String) {
-    user(login: $username) {
-      createdAt
-      organizations(first: 100, after: $cursor) {
-        edges {
-          node {
-            login
-            name
-            description
-            teams(first: 100, userLogins: [$username]) {
-                edges {
-                    node {
-                        name
-                        slug
-                        description
-                    }
-                }
-                totalCount
-                pageInfo {
-                    endCursor
-                    hasNextPage
-                }
-            }
-          }
-        }
-        totalCount
-        pageInfo {
-           endCursor
-           hasNextPage
-        }
-      }
-    }
-  }`
-
-    try {
-      /**
-       * @type { created_at: string, orgs: Array<{org: {login: string, name: string, description: string}, teams: Array<{name: string, slug: string, description: string}>}>}
-       */
-      const userWithOrgs = { orgs: [], created_at: null }
-      const iterator = await this.graphql.paginate.iterator(query, {
-        username
-      })
-
-      for await (const result of iterator) {
-        const hasMoreOrgs = result.user.organizations.pageInfo.hasNextPage
-        userWithOrgs.created_at = result.user.createdAt
-
-        if (hasMoreOrgs) {
-          core.debug(
-            `User ${username} is a member of more than 100 organizations. Results will be paged.`
-          )
-
-          // todo - perform a rate limit check if there are more pages ?
-        }
-
-        for (const org of result.user.organizations.edges) {
-          if (orgFilter && !orgFilter(org.node.login)) {
-            core.warning(
-              `⚠️ Skipping org ${org.node.login} as it is not in the enterprise`
-            )
-            continue
-          }
-
-          const orgResult = {
-            org: {
-              login: org.node.login,
-              name: org.node.name,
-              description: org.node.description
-            },
-            teams: org.node.teams.edges.map(edge => edge.node)
-          }
-
-          const hasMoreTeams = org.node.teams.pageInfo.hasNextPage
-          if (hasMoreTeams) {
-            const teams = await this.getMoreTeamsForUser(
-              username,
-              org.node.login,
-              org.node.teams.pageInfo.endCursor
-            )
-            orgResult.teams.push(...teams)
-          }
-
-          userWithOrgs.orgs.push(orgResult)
-        }
-      }
-
-      // remove orgs that are not in the enterprise
-      const teams_count = userWithOrgs.orgs.reduce(
-        (acc, org) => acc + org.teams.length,
-        0
-      )
-      core.info(
-        `Found ${userWithOrgs.orgs.length} orgs with ${teams_count} teams for ${username}`
-      )
-      return userWithOrgs
-    } catch (error) {
-      core.error(`Error fetching teams and orgs for a user : ${username}`)
-      // do not throw error, just return empty array
-      return { orgs: [], created_at: null }
     }
   }
 
@@ -650,7 +464,7 @@ enterprise(slug: $ent) {
       const map = new Map(seats.map(seat => [seat.assignee.login, seat]))
       return map
     } catch (error) {
-      console.error('Error fetching copilot billing seats:', error)
+      core.error(`Error fetching copilot billing seats in '${ent}'`)
       throw error
     }
   }
