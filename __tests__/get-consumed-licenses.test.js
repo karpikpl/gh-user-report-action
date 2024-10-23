@@ -74,7 +74,7 @@ describe('UserManager', () => {
 
     const result = await userManager.getConsumedLicenses(ent)
 
-    expect(result.length).toEqual(251)
+    expect(result).toHaveLength(251)
     // check if 12 api calls available (we need 2 pages 100 orgs each + buffer of 10)
     expect(hold_until_rate_limit_success).toHaveBeenCalledWith(
       13,
@@ -83,7 +83,7 @@ describe('UserManager', () => {
     )
   })
 
-  it('should handle errors when fetching onsumed copilot licenses in an enterprise', async () => {
+  it('should handle errors when fetching consumed copilot licenses in an enterprise', async () => {
     const errorMessage = 'Error fetching users consuming licenses'
     octokit.paginate.iterator.mockImplementation(() => {
       throw new Error(errorMessage)
