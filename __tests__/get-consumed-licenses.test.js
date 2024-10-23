@@ -4,7 +4,7 @@ const core = require('@actions/core')
 
 jest.mock('../src/rateLimit')
 
-describe('UserManager', () => {
+describe('UserManager - getConsumedLicenses', () => {
   let userManager
   let octokit
   let graphql
