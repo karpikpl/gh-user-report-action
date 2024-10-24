@@ -40352,7 +40352,8 @@ async function callGitHubAPI(token, callsNeeded) {
       }
     }
   } catch (error) {
-    console.error(`Error calling GitHub API: ${error}`)
+    core.error(`Error calling GitHub API: ${error}`)
+    core.error(error)
   }
 }
 
@@ -40403,7 +40404,8 @@ async function hold_until_rate_limit_success(
 
     await callGitHubAPI(token, callsNeeded)
   } catch (error) {
-    console.error(`Error calling GitHub API: ${error}`)
+    core.error(`Error calling GitHub API: ${error}`)
+    core.error(error)
   }
 }
 
@@ -41000,6 +41002,7 @@ enterprise(slug: $ent) {
       return userWithOrgs
     } catch (error) {
       core.error(`Error fetching teams and orgs for a user : ${username}`)
+      core.error(error)
       // do not throw error, just return empty array
       return { orgs: [] }
     }

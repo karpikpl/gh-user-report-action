@@ -297,6 +297,7 @@ enterprise(slug: $ent) {
       return userWithOrgs
     } catch (error) {
       core.error(`Error fetching teams and orgs for a user : ${username}`)
+      core.error(error)
       // do not throw error, just return empty array
       return { orgs: [] }
     }

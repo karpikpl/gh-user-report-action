@@ -83,10 +83,10 @@ describe('UserManager - getTeamsForUser', () => {
   })
 
   it('should handle errors when fetching teams for user', async () => {
-    const errorMessage = 'Error fetching users consuming licenses'
+    const error = new Error('Error fetching teams for user')
     const username = 'test-user'
     graphql.paginate.iterator.mockImplementation(() => {
-      throw new Error(errorMessage)
+      throw error
     })
 
     const result = await userManager.getTeamsForUser(username, ent)
@@ -94,6 +94,7 @@ describe('UserManager - getTeamsForUser', () => {
     expect(core.error).toHaveBeenCalledWith(
       `Error fetching teams and orgs for a user : ${username}`
     )
+    expect(core.error).toHaveBeenCalledWith(error)
     expect(result.orgs).toHaveLength(0)
   })
 
