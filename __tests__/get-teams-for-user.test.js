@@ -83,7 +83,7 @@ describe('UserManager - getTeamsForUser', () => {
   })
 
   it('should handle errors when fetching teams for user', async () => {
-    const error = new Error('Error fetching users consuming licenses')
+    const error = new Error('Error fetching teams for user')
     const username = 'test-user'
     graphql.paginate.iterator.mockImplementation(() => {
       throw error
