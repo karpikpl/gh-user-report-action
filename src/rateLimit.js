@@ -24,7 +24,8 @@ async function callGitHubAPI(token, callsNeeded) {
       }
     }
   } catch (error) {
-    console.error(`Error calling GitHub API: ${error}`)
+    core.error(`Error calling GitHub API: ${error}`)
+    core.error(error)
   }
 }
 
@@ -75,7 +76,8 @@ async function hold_until_rate_limit_success(
 
     await callGitHubAPI(token, callsNeeded)
   } catch (error) {
-    console.error(`Error calling GitHub API: ${error}`)
+    core.error(`Error calling GitHub API: ${error}`)
+    core.error(error)
   }
 }
 
