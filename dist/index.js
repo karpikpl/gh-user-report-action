@@ -39929,9 +39929,7 @@ class ReportBuilder {
         github_com_profile: user.github_com_profile,
         'Account Creation Date': publicUserData.created_at,
         'Account Last Updated': publicUserData.updated_at,
-        'Account Type': publicUserData.type,
         'Account Company': publicUserData.company,
-        'Account Name': publicUserData.name,
         'User Team Membership': userTeamsReport.orgs
           .map(o => o.teams)
           .filter(t => t)
