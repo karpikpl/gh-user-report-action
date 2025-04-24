@@ -2,7 +2,7 @@ const { StorageTableClient } = require('./storageTableclient')
 const { UserManager } = require('./userManager')
 const core = require('@actions/core')
 
-/* table with users publid data */
+/* table with users public data */
 const tableName = 'userspublicdata'
 
 /**
