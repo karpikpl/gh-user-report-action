@@ -16,10 +16,10 @@ class StorageTableClient {
    * @returns {StorageTableClient} The new instance.
    * @constructor
    */
-  constructor(tableStorageConnectionString) {
+  constructor(tableStorageConnectionString, table = tableName) {
     this.tableClient = TableClient.fromConnectionString(
       tableStorageConnectionString,
-      tableName
+      table
     )
   }
 
@@ -39,13 +39,13 @@ class StorageTableClient {
 
   /**
    * Get all entities in the table
-   * @returns {Promise<Array<{partitionKey:string, rowKey:string, lastActivityDate: Date, lastUpdated: Date}>} The entities in the table
+   * @returns {Promise<Array<{partitionKey:string, rowKey:string, lastUpdated: Date, any}>} The entities in the table
    */
   async getAll() {
     const entitiesIterator = this.tableClient.listEntities()
 
     /**
-     * @type {Array<{partitionKey:string, rowKey:string, lastActivityDate: Date, lastUpdated: Date}>}
+     * @type {Array<{partitionKey:string, rowKey:string, lastUpdated: Date, any}>}
      * */
     const entities = []
 
@@ -66,6 +66,30 @@ class StorageTableClient {
       partitionKey,
       rowKey: login,
       lastActivityDate,
+      lastUpdated: new Date().toISOString()
+    }
+    await this.tableClient.upsertEntity(entity)
+
+    return entity
+  }
+
+  /**
+   * Upsert a user entity
+   * @param {string} login The login of the user
+   * @param {{login:string, id:number, type:string, created_at: Date, updated_at: Date, company: string, name: string}} user User object
+   * @returns {Promise<{partitionKey:string, rowKey:string, login:string, id:number, type:string, created_at: Date, updated_at: Date, company: string, name: string, lastUpdated: Date}>} The entity that was upserted
+   */
+  async upsertUserData(login, user) {
+    const entity = {
+      partitionKey,
+      rowKey: login,
+      id: user.id,
+      login: user.login,
+      type: user.type,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+      company: user.company,
+      name: user.name,
       lastUpdated: new Date().toISOString()
     }
     await this.tableClient.upsertEntity(entity)

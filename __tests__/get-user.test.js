@@ -4,12 +4,11 @@ const core = require('@actions/core')
 
 jest.mock('../src/rateLimit')
 
-describe('UserManager - getLastActivityForUser', () => {
+describe('UserManager - getUser', () => {
   let userManager
   let octokit
   let graphql
   const token = 'test-token'
-  const ent = 'test-enterprise'
 
   beforeEach(async () => {
     octokit = {
@@ -38,7 +37,7 @@ describe('UserManager - getLastActivityForUser', () => {
     jest.clearAllMocks()
   })
 
-  it('should fetch last activity for user successfully', async () => {
+  it('should fetch user data for user successfully', async () => {
     const headers = {
       'x-ratelimit-remaining': 100
     }
@@ -46,36 +45,44 @@ describe('UserManager - getLastActivityForUser', () => {
     const date = new Date()
 
     octokit.request.mockReturnValue({
-      data: [
-        {
-          '@timestamp': Math.floor(date.getTime())
-        }
-      ],
+      data: {
+        login: username,
+        id: 123456,
+        type: 'User',
+        user_view_type: 'private',
+        site_admin: false,
+        name: 'Joe Test',
+        company: 'Microsoft',
+        location: 'Charlotte',
+        email: null,
+        hireable: null,
+        bio: 'Cloud Solution Architect @microsoft',
+        created_at: '2013-02-12T08:31:17Z',
+        updated_at: '2025-04-14T13:03:47Z'
+      },
       headers
     })
 
-    const result = await userManager.getLastActivityForUser(username, ent)
+    const result = await userManager.getUser(username)
 
-    expect(result.lastActivityDate).toEqual(date)
+    expect(result.userData.login).toEqual(username)
     expect(result.rateLimitRemaining).toEqual(100)
   })
 
-  it('should handle errors when fetching last activity', async () => {
-    const errorMessage = 'Error fetching last activity'
+  it('should handle errors when fetching user data', async () => {
+    const errorMessage = 'Error fetching user data'
     const username = 'test-joe'
     octokit.request.mockImplementation(() => {
       throw new Error(errorMessage)
     })
 
-    await expect(
-      userManager.getLastActivityForUser(username, ent)
-    ).rejects.toThrow(errorMessage)
+    await expect(userManager.getUser(username)).rejects.toThrow(errorMessage)
     expect(core.error).toHaveBeenCalledWith(
-      `Error fetching last activity for ${username} in '${ent}' enterprise.`
+      `Error fetching user data for ${username}`
     )
   })
 
-  it('should fetch last activity for user successfully when theres no activity', async () => {
+  it('should fetch user data for user successfully when API returns empty', async () => {
     const headers = {
       'x-ratelimit-remaining': 87
     }
@@ -83,13 +90,13 @@ describe('UserManager - getLastActivityForUser', () => {
     const date = new Date()
 
     octokit.request.mockReturnValue({
-      data: [],
+      data: null,
       headers
     })
 
-    const result = await userManager.getLastActivityForUser(username, ent)
+    const result = await userManager.getUser(username)
 
-    expect(result.lastActivityDate).toEqual(null)
+    expect(result.userData).toEqual(null)
     expect(result.rateLimitRemaining).toEqual(87)
   })
 })
