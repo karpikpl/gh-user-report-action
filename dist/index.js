@@ -39735,9 +39735,9 @@ async function callGitHubAPI(token, callsNeeded) {
     // eslint-disable-next-line no-constant-condition
     while (true) {
       // make a dummy request to get the rate limit
-      const response = await octokit.request('GET /users/octocat')
+      const remaining = await getRateLimit(token)
 
-      const isEnough = await waitIfNotEnoughCalls(response.headers, callsNeeded)
+      const isEnough = await waitIfNotEnoughCalls(remaining, callsNeeded)
 
       if (isEnough) {
         break
@@ -39752,14 +39752,11 @@ async function callGitHubAPI(token, callsNeeded) {
 /**
  * Waits if the remaining API calls are not enough.
  * Parses the rate limit from the response headers and waits for 60 seconds if the remaining calls are less than needed.
- * @param {Object} headers - The response headers from the GitHub API call.
+ * @param {number} remaining - The remaining GitHub API calls.
  * @param {number} callsNeeded - The number of API calls needed.
  * @returns {Promise<boolean>} - Returns a promise that resolves to `true` if there are enough remaining calls, otherwise `false`.
  */
-async function waitIfNotEnoughCalls(headers, callsNeeded) {
-  // parse the rate limit from the response headers
-  const remaining = parseInt(headers['x-ratelimit-remaining'], 10)
-
+async function waitIfNotEnoughCalls(remaining, callsNeeded) {
   if (remaining < callsNeeded) {
     core.info('Rate limit approaching, waiting for 60 seconds...')
     await new Promise(resolve => setTimeout(resolve, 60000))
@@ -39801,7 +39798,24 @@ async function hold_until_rate_limit_success(
   }
 }
 
-module.exports = { hold_until_rate_limit_success, callGitHubAPI }
+async function getRateLimit(token) {
+  try {
+    const octokit = github.getOctokit(token)
+
+    // make a dummy request to get the rate limit
+    const response = await octokit.request('GET /users/octocat')
+    // parse the rate limit from the response headers
+    const remaining = parseInt(response.headers['x-ratelimit-remaining'], 10)
+
+    return remaining
+  } catch (error) {
+    core.error(`Error calling GitHub API: ${error}`)
+    core.error(error)
+    return 0
+  }
+}
+
+module.exports = { hold_until_rate_limit_success, callGitHubAPI, getRateLimit }
 
 
 /***/ }),
@@ -39812,6 +39826,7 @@ module.exports = { hold_until_rate_limit_success, callGitHubAPI }
 const { UserManager } = __nccwpck_require__(1755)
 const { toCSV } = __nccwpck_require__(6937)
 const { LastActivityProvider } = __nccwpck_require__(885)
+const { UserAccountProvider } = __nccwpck_require__(5658)
 const core = __nccwpck_require__(7484)
 
 class ReportBuilder {
@@ -39842,6 +39857,11 @@ class ReportBuilder {
       tableStorageConnectionString,
       ent
     )
+    this.userAccountProvider = new UserAccountProvider(
+      this.manager,
+      tableStorageConnectionString,
+      ent
+    )
   }
 
   /**
@@ -39868,6 +39888,7 @@ class ReportBuilder {
     // initialize the last activity provider
     await this.lastActivityProvider.initialize(users)
     await this.lastActivityProvider.refreshUserData()
+    await this.userAccountProvider.initialize(users)
 
     core.info(`Getting copilot seats 💺💺💺 in '${this.ent}'`)
     const copilotSeats = await this.manager.getCopilotSeats(this.ent)
@@ -39896,13 +39917,19 @@ class ReportBuilder {
       user.lastActivityAudit = lastActivityAudit.lastActivityDate
       user.lastActivityAuditChecked = lastActivityAudit.lastChecked
 
+      const publicUserData = await this.userAccountProvider.getUserData(
+        user.github_com_login
+      )
+
       const newEntry = {
         github_com_login: user.github_com_login,
         github_com_name: user.github_com_name,
         visual_studio_subscription_user: user.visual_studio_subscription_user,
         license_type: user.license_type,
         github_com_profile: user.github_com_profile,
-        'Account Creation Date': userTeamsReport.created_at,
+        'Account Creation Date': publicUserData.created_at,
+        'Account Last Updated': publicUserData.updated_at,
+        'Account Company': publicUserData.company,
         'User Team Membership': userTeamsReport.orgs
           .map(o => o.teams)
           .filter(t => t)
@@ -39992,10 +40019,10 @@ class StorageTableClient {
    * @returns {StorageTableClient} The new instance.
    * @constructor
    */
-  constructor(tableStorageConnectionString) {
+  constructor(tableStorageConnectionString, table = tableName) {
     this.tableClient = TableClient.fromConnectionString(
       tableStorageConnectionString,
-      tableName
+      table
     )
   }
 
@@ -40015,13 +40042,13 @@ class StorageTableClient {
 
   /**
    * Get all entities in the table
-   * @returns {Promise<Array<{partitionKey:string, rowKey:string, lastActivityDate: Date, lastUpdated: Date}>} The entities in the table
+   * @returns {Promise<Array<{partitionKey:string, rowKey:string, lastUpdated: Date, any}>} The entities in the table
    */
   async getAll() {
     const entitiesIterator = this.tableClient.listEntities()
 
     /**
-     * @type {Array<{partitionKey:string, rowKey:string, lastActivityDate: Date, lastUpdated: Date}>}
+     * @type {Array<{partitionKey:string, rowKey:string, lastUpdated: Date, any}>}
      * */
     const entities = []
 
@@ -40042,6 +40069,30 @@ class StorageTableClient {
       partitionKey,
       rowKey: login,
       lastActivityDate,
+      lastUpdated: new Date().toISOString()
+    }
+    await this.tableClient.upsertEntity(entity)
+
+    return entity
+  }
+
+  /**
+   * Upsert a user entity
+   * @param {string} login The login of the user
+   * @param {{login:string, id:number, type:string, created_at: Date, updated_at: Date, company: string, name: string}} user User object
+   * @returns {Promise<{partitionKey:string, rowKey:string, login:string, id:number, type:string, created_at: Date, updated_at: Date, company: string, name: string, lastUpdated: Date}>} The entity that was upserted
+   */
+  async upsertUserData(login, user) {
+    const entity = {
+      partitionKey,
+      rowKey: login,
+      id: user.id,
+      login: user.login,
+      type: user.type,
+      created_at: user.created_at,
+      updated_at: user.updated_at,
+      company: user.company,
+      name: user.name,
       lastUpdated: new Date().toISOString()
     }
     await this.tableClient.upsertEntity(entity)
@@ -40088,6 +40139,280 @@ class StorageTableClient {
 }
 
 module.exports = { StorageTableClient }
+
+
+/***/ }),
+
+/***/ 5658:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+const { StorageTableClient } = __nccwpck_require__(9981)
+const { UserManager } = __nccwpck_require__(1755)
+const core = __nccwpck_require__(7484)
+
+/* table with users public data */
+const tableName = 'userspublicdata'
+
+/**
+ * A provider for getting the last activity date for a user.
+ * @class
+ * @classdesc A provider for getting the last activity date for a user.
+ * @property {UserManager} manager The user manager.
+ * @property {StorageTableClient} tableClient The table storage client.
+ * @property {Array<{partitionKey:string, rowKey:string, id:number, type:string, created_at: Date, updated_at: Date, company: string, name: string, lastUpdated: Date}>} users The users in the table.
+ * @property {integer} rateLimitRemaining The remaining rate limit for the GitHub Enterprise API. (default 5000)
+ */
+class UserAccountProvider {
+  /**
+   * Creates a new instance of the UserAccountProvider.
+   * @param {UserManager} userManager The GitHub token.
+   * @param {string} tableStorageConnectionString Connection String to Azure Table Storage.
+   * @returns {UserAccountProvider} The new instance.
+   * @constructor
+   */
+  constructor(userManager, tableStorageConnectionString) {
+    this.manager = userManager
+    this.rateLimitRemaining = 1000 // assume we have 1000 calls left
+
+    if (tableStorageConnectionString) {
+      core.info(`Using Azure Table Storage for User Cache.`)
+      this.tableClient = new StorageTableClient(
+        tableStorageConnectionString,
+        tableName
+      )
+    }
+  }
+
+  /**
+   * Initialize the cache with all users.
+   * @param {Array<{
+   * github_com_login : string,
+   * }>} allUsers all users in the enterprise.
+   * @returns {Promise<void>} Resolves when the cache is initialized.
+   */
+  async initialize(allUsers) {
+    if (this.tableClient) {
+      await this.tableClient.createTable()
+      this.users = await this.tableClient.getAll()
+
+      // find which users are missing in the cache and add them with empty last activity date
+      const missingUsers = allUsers
+        .filter(
+          user => !this.users.some(u => u.rowKey === user.github_com_login)
+        )
+        .map(user => user.github_com_login)
+
+      if (missingUsers.length > 0) {
+        await this.tableClient.bulkInsert(missingUsers)
+      }
+
+      this.users = await this.tableClient.getAll()
+    } else {
+      core.warning(`⚠️ No Azure Table Storage connection string provided.`)
+    }
+  }
+
+  /**
+   * Refresh the cache for the users.
+   * It checks which 2000 users have the oldest `lastUpdated` date and refreshes their cache.
+   * @returns {Promise<void>} Resolves when the cache is refreshed.
+   * @async
+   * @throws {Error} Throws an error when the rate limit is low.
+   */
+  async refreshUserData() {
+    if (this.tableClient) {
+      // get top 2000 users with oldest `lastUpdated` date
+
+      /**
+       * @type {Array<{partitionKey:string, rowKey:string, created_at: Date, updated_at: Date, company: string, name: string, lastUpdated: Date}>}
+       */
+      const usersToCheck = this.users
+        .sort((a, b) => {
+          const aDate = a.lastUpdated ? new Date(a.lastUpdated) : new Date(0) // Treat null as the oldest date
+          const bDate = b.lastUpdated ? new Date(b.lastUpdated) : new Date(0) // Treat null as the oldest date
+          return aDate - bDate
+        })
+        .slice(0, 2000)
+
+      let index = 0
+
+      for (const user of usersToCheck) {
+        try {
+          const response = await this.manager.getUser(user.rowKey)
+
+          const updated = await this.tableClient.upsertUserData(
+            user.rowKey,
+            response.userData
+          )
+          // update the cache
+          user.lastUpdated = updated.lastUpdated
+          user.created_at = updated.created_at
+          user.updated_at = updated.updated_at
+          user.company = updated.company
+          user.name = updated.name
+
+          const percentComplete = Math.floor(
+            (index / usersToCheck.length) * 100
+          )
+          index++
+          core.info(
+            `${percentComplete}%. Refreshed User Cache for ${user.rowKey}.`
+          )
+
+          if (response.rateLimitRemaining < 5) {
+            core.warning(`Rate limit is low. Stopping User Cache refresh.`)
+            break
+          }
+        } catch (error) {
+          core.warning(
+            `Error getting last activity for ${user.rowKey}: ${error}`
+          )
+        }
+      }
+    }
+  }
+
+  /**
+   * Get the user data, either by API call or from the cache when table storage is available.
+   * @param {string} github_com_login The GitHub login for the user.
+   * @returns {Promise<{login:string, id:number, type:string, created_at: Date, updated_at: Date, company: string, name: string, lastChecked: Date}>} User data
+   */
+  async getUserData(github_com_login) {
+    if (!this.tableClient) {
+      // when there's no table storage, just call the API
+      try {
+        if (this.rateLimitRemaining < 5) {
+          core.warning(`Rate limit is low. Cancelling calls to the API.`)
+          return {
+            login: github_com_login,
+            lastChecked: null,
+            id: null,
+            type: null,
+            created_at: null,
+            updated_at: null,
+            company: null,
+            name: null
+          }
+        }
+
+        const userDataResponse = await this.manager.getUser(
+          github_com_login,
+          false // do not sleep on rate limit hit
+        )
+        // update the rate limit remaining
+        this.rateLimitRemaining = userDataResponse.rateLimitRemaining
+
+        return userDataResponse.userData
+      } catch (error) {
+        core.error(
+          `Error getting last activity for ${github_com_login} for User API: ${error}`
+        )
+        return {
+          login: github_com_login,
+          lastChecked: null,
+          id: null,
+          type: null,
+          created_at: null,
+          updated_at: null,
+          company: null,
+          name: null
+        }
+      }
+    }
+
+    // if table storage is available, check the cache first
+    const user = this.users.find(u => u.rowKey === github_com_login)
+
+    if (!user) {
+      // if the user is not in the cache log a warning
+      core.warning(`User ${github_com_login} not found in the User Cache.`)
+      return {
+        login: github_com_login,
+        lastChecked: null,
+        id: null,
+        type: null,
+        created_at: null,
+        updated_at: null,
+        company: null,
+        name: null,
+        rateLimitRemaining: this.rateLimitRemaining
+      }
+    }
+
+    // if the user data is empty or wasn't updated in 3 days, refresh it
+    let needToUpdate = false
+
+    if (user.lastUpdated) {
+      const lastUpdatedDate = new Date(user.lastUpdated)
+      const currentDate = new Date()
+      const diffTime = Math.abs(currentDate - lastUpdatedDate)
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+
+      if (diffDays > 3) {
+        core.info(
+          `User ${github_com_login} was not updated in ${diffDays} days. Refreshing data.`
+        )
+        needToUpdate = true
+      }
+    } else {
+      // no lastUpdated date means the user needs to be updated
+      needToUpdate = true
+    }
+
+    if (!needToUpdate) {
+      // user is fresh
+      core.info(`User ${github_com_login} is fresh. No need to update.`)
+      return {
+        login: github_com_login,
+        lastChecked: user.lastChecked,
+        id: user.id,
+        type: user.type,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        company: user.company,
+        name: user.name
+      }
+    }
+
+    if (this.rateLimitRemaining < 5) {
+      core.warning(`Rate limit is low. Cancelling calls to the API.`)
+      return {
+        login: github_com_login,
+        lastChecked: user.lastChecked,
+        id: user.id,
+        type: user.type,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+        company: user.company,
+        name: user.name
+      }
+    }
+    const userResponse = await this.manager.getUser(github_com_login, false)
+    // update the rate limit remaining
+    this.rateLimitRemaining = userResponse.rateLimitRemaining
+
+    // update table storage
+    const updated = await this.tableClient.upsertUserData(
+      github_com_login,
+      userResponse.userData
+    )
+
+    // update the cache
+    user.lastUpdated = updated.lastUpdated
+    user.created_at = updated.created_at
+    user.updated_at = updated.updated_at
+    user.company = updated.company
+    user.name = updated.name
+    user.id = updated.id
+    user.type = updated.type
+
+    return userResponse.userData
+  }
+}
+
+module.exports = {
+  UserAccountProvider
+}
 
 
 /***/ }),
@@ -40507,6 +40832,42 @@ enterprise(slug: $ent) {
       core.error(
         `Error fetching last activity for ${username} in '${ent}' enterprise.`
       )
+      throw error
+    }
+  }
+
+  /**
+   * Get the last activity for a user in an enterprise.
+   * @param {string} username the GitHub username
+   * @param {boolean} sleepOnRateLimit
+   * @returns {Promise<{userData: {login:string, id:number, type:string, created_at: Date, updated_at: Date, company: string, name: string}, rateLimitRemaining: int}>}
+   */
+  async getUser(username, sleepOnRateLimit = true) {
+    await this.#init()
+
+    try {
+      const response = await this.octokit.request(`GET /users/${username}`)
+
+      // perform a rate limit check by reading X-RateLimit-Remaining header
+      const remaining = parseInt(response.headers['x-ratelimit-remaining'])
+      core.info(
+        `GitHub API has a rate limit of 5000 queries per hour per user and IP address. Rate limit check - ${remaining} remaining`
+      )
+      if (remaining < 25 && sleepOnRateLimit) {
+        core.info('Rate limit approaching, waiting for 1 minute...')
+        await new Promise(resolve => setTimeout(resolve, 1 * 60000))
+      }
+
+      /**
+       * @type {{login:string, id:number, type:string, created_at: Date, updated_at: Date, company: string, name: string}}
+       */
+      const user = response.data
+      return {
+        userData: user,
+        rateLimitRemaining: remaining
+      }
+    } catch (error) {
+      core.error(`Error fetching user data for ${username}`)
       throw error
     }
   }

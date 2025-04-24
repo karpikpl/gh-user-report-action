@@ -415,6 +415,42 @@ enterprise(slug: $ent) {
   }
 
   /**
+   * Get the last activity for a user in an enterprise.
+   * @param {string} username the GitHub username
+   * @param {boolean} sleepOnRateLimit
+   * @returns {Promise<{userData: {login:string, id:number, type:string, created_at: Date, updated_at: Date, company: string, name: string}, rateLimitRemaining: int}>}
+   */
+  async getUser(username, sleepOnRateLimit = true) {
+    await this.#init()
+
+    try {
+      const response = await this.octokit.request(`GET /users/${username}`)
+
+      // perform a rate limit check by reading X-RateLimit-Remaining header
+      const remaining = parseInt(response.headers['x-ratelimit-remaining'])
+      core.info(
+        `GitHub API has a rate limit of 5000 queries per hour per user and IP address. Rate limit check - ${remaining} remaining`
+      )
+      if (remaining < 25 && sleepOnRateLimit) {
+        core.info('Rate limit approaching, waiting for 1 minute...')
+        await new Promise(resolve => setTimeout(resolve, 1 * 60000))
+      }
+
+      /**
+       * @type {{login:string, id:number, type:string, created_at: Date, updated_at: Date, company: string, name: string}}
+       */
+      const user = response.data
+      return {
+        userData: user,
+        rateLimitRemaining: remaining
+      }
+    } catch (error) {
+      core.error(`Error fetching user data for ${username}`)
+      throw error
+    }
+  }
+
+  /**
    * Get the copilot seats for an enterprise.
    * @param {string} ent The enterprise name.
    * @returns {Promise<Map<string, {created_at: string, updated_at: string, pending_cancellation_date: string, last_activity_at: string, last_activity_editor: string, assignee: {login: string}, assigning_team: {slug: string}, organization: {login: string}}>} The map with copilot seats for the enterprise where the key is the assignee login.

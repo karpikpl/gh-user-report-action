@@ -1,6 +1,7 @@
 const { UserManager } = require('./userManager')
 const { toCSV } = require('./csvHelper')
 const { LastActivityProvider } = require('./lastActivityprovider')
+const { UserAccountProvider } = require('./userAccountprovider')
 const core = require('@actions/core')
 
 class ReportBuilder {
@@ -31,6 +32,11 @@ class ReportBuilder {
       tableStorageConnectionString,
       ent
     )
+    this.userAccountProvider = new UserAccountProvider(
+      this.manager,
+      tableStorageConnectionString,
+      ent
+    )
   }
 
   /**
@@ -57,6 +63,7 @@ class ReportBuilder {
     // initialize the last activity provider
     await this.lastActivityProvider.initialize(users)
     await this.lastActivityProvider.refreshUserData()
+    await this.userAccountProvider.initialize(users)
 
     core.info(`Getting copilot seats 💺💺💺 in '${this.ent}'`)
     const copilotSeats = await this.manager.getCopilotSeats(this.ent)
@@ -85,13 +92,19 @@ class ReportBuilder {
       user.lastActivityAudit = lastActivityAudit.lastActivityDate
       user.lastActivityAuditChecked = lastActivityAudit.lastChecked
 
+      const publicUserData = await this.userAccountProvider.getUserData(
+        user.github_com_login
+      )
+
       const newEntry = {
         github_com_login: user.github_com_login,
         github_com_name: user.github_com_name,
         visual_studio_subscription_user: user.visual_studio_subscription_user,
         license_type: user.license_type,
         github_com_profile: user.github_com_profile,
-        'Account Creation Date': userTeamsReport.created_at,
+        'Account Creation Date': publicUserData.created_at,
+        'Account Last Updated': publicUserData.updated_at,
+        'Account Company': publicUserData.company,
         'User Team Membership': userTeamsReport.orgs
           .map(o => o.teams)
           .filter(t => t)
