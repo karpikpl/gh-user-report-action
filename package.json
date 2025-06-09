@@ -65,8 +65,8 @@
   },
   "dependencies": {
     "@actions/core": "^1.11.1",
-    "@actions/github": "^6.0.0",
-    "@azure/data-tables": "^13.3.0",
+    "@actions/github": "^6.0.1",
+    "@azure/data-tables": "^13.3.1",
     "@json2csv/plainjs": "^7.0.6",
     "@octokit/graphql": "^8.2.2",
     "@octokit/plugin-paginate-graphql": "^5.2.4",
