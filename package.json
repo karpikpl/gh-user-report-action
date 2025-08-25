@@ -73,9 +73,9 @@
     "@octokit/plugin-paginate-rest": "^13.1.1"
   },
   "devDependencies": {
-    "@babel/core": "^7.28.0",
+    "@babel/core": "^7.28.3",
     "@babel/eslint-parser": "^7.28.0",
-    "@babel/preset-env": "^7.28.0",
+    "@babel/preset-env": "^7.28.3",
     "@vercel/ncc": "^0.38.3",
     "babel-preset-jest": "^29.6.3",
     "eslint": "^8.57.0",
